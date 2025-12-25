@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "ado-story-testcase": {
+      "command": "python",
+      "args": ["-m", "src.mcp_server"],
+      "env": {
+        "AZURE_DEVOPS_ORG": "your-organization-name",
+        "AZURE_DEVOPS_PROJECT": "your-project-name",
+        "AZURE_DEVOPS_PAT": "your-personal-access-token",
+        "OPENAI_API_KEY": "your-openai-api-key-or-leave-empty-for-azure",
+        "AZURE_OPENAI_ENDPOINT": "https://your-resource.openai.azure.com/",
+        "AZURE_OPENAI_API_KEY": "your-azure-openai-key",
+        "AZURE_OPENAI_DEPLOYMENT": "gpt-4"
+      }
+    }
+  }
+}
