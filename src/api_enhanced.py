@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flasgger import Swagger, swag_from
 from src.enhanced_story_creator import EnhancedStoryCreator
 from src.models_enhanced import EnhancedUserStory
 from src.ado_client import ADOClient
@@ -6,6 +7,38 @@ from config.settings import Settings
 
 app = Flask(__name__)
 app.debug = False  # Disable debug mode
+
+# Configure Swagger
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": 'apispec',
+            "route": '/apispec.json',
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/api/docs"
+}
+
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "ADO Story Extractor API",
+        "description": "API for creating enhanced user stories with complexity analysis",
+        "version": "1.0.0",
+        "contact": {
+            "name": "API Support"
+        }
+    },
+    "basePath": "/",
+    "schemes": ["http", "https"]
+}
+
+swagger = Swagger(app, config=swagger_config, template=swagger_template)
 story_creator = EnhancedStoryCreator()
 ado_client = ADOClient()
 
@@ -14,12 +47,109 @@ PORT = 8080
 
 @app.route('/')
 def test_connection():
-    """Test endpoint to verify server is up"""
+    """Test endpoint to verify server is up
+    ---
+    tags:
+      - Health
+    responses:
+      200:
+        description: Server is running
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+            message:
+              type: string
+              example: Server is running
+    """
     return jsonify({"status": "ok", "message": "Server is running"}), 200
 
 @app.route('/api/stories/enhanced/auto', methods=['POST'])
 def create_enhanced_story():
-    """Create an enhanced story with complexity analysis and upload to ADO"""
+    """Create an enhanced story with complexity analysis and upload to ADO
+    ---
+    tags:
+      - Stories
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - title
+            - acceptance_criteria
+          properties:
+            title:
+              type: string
+              description: Story title or heading
+              example: "Implement user login functionality"
+            description:
+              type: string
+              description: Detailed story description
+              example: "As a user, I want to log in to the system"
+            acceptance_criteria:
+              type: array
+              items:
+                type: string
+              description: List of acceptance criteria
+              example: ["User can enter email and password", "System validates credentials"]
+            work_item_type:
+              type: string
+              description: ADO work item type
+              example: "User Story"
+    responses:
+      200:
+        description: Story created successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: true
+            story_id:
+              type: integer
+              example: 12345
+            story_url:
+              type: string
+              example: "https://dev.azure.com/org/project/_workitems/edit/12345"
+            message:
+              type: string
+              example: "Story created successfully"
+            complexity_level:
+              type: string
+              example: "MEDIUM"
+            story_points:
+              type: integer
+              example: 5
+            rationale:
+              type: string
+              example: "Story requires moderate effort"
+      400:
+        description: Bad request - missing required fields
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "Missing required fields"
+            success:
+              type: boolean
+              example: false
+      500:
+        description: Internal server error
+        schema:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "Failed to create story"
+            success:
+              type: boolean
+              example: false
+    """
     try:
         app.logger.info("Received request for story creation")
         data = request.get_json()

@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 from flask import Flask, render_template, request, jsonify, Response
 from flask_cors import CORS
+from flasgger import Swagger
 
 from src.agent import StoryExtractionAgent
 from src.models import TestCaseExtractionResult, StoryExtractionResult
@@ -48,6 +49,38 @@ class MonitorAPI:
                 raise RuntimeError("Monitor configuration is required. Please provide a valid configuration.")
 
         self.monitor = EpicChangeMonitor(config)
+
+        # Configure Swagger
+        swagger_config = {
+            "headers": [],
+            "specs": [
+                {
+                    "endpoint": 'apispec',
+                    "route": '/apispec.json',
+                    "rule_filter": lambda rule: True,
+                    "model_filter": lambda tag: True,
+                }
+            ],
+            "static_url_path": "/flasgger_static",
+            "swagger_ui": True,
+            "specs_route": "/api/docs"
+        }
+
+        swagger_template = {
+            "swagger": "2.0",
+            "info": {
+                "title": "ADO Story Monitor API",
+                "description": "API for monitoring and extracting stories and test cases from Azure DevOps",
+                "version": "1.0.0",
+                "contact": {
+                    "name": "API Support"
+                }
+            },
+            "basePath": "/",
+            "schemes": ["http", "https"]
+        }
+
+        self.swagger = Swagger(self.app, config=swagger_config, template=swagger_template)
 
         # Setup routes
         self._setup_routes()
@@ -108,12 +141,41 @@ class MonitorAPI:
 
         @self.app.route('/')
         def dashboard():
-            """Main dashboard page"""
+            """Main dashboard page
+            ---
+            tags:
+              - Dashboard
+            responses:
+              200:
+                description: Returns the HTML dashboard page
+            """
             return render_template('dashboard.html')
 
         @self.app.route('/api/health')
         def health_check():
-            """Health check endpoint"""
+            """Health check endpoint
+            ---
+            tags:
+              - Health
+            responses:
+              200:
+                description: Service health status
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: healthy
+                    timestamp:
+                      type: string
+                      example: "2025-12-30T10:00:00"
+                    service:
+                      type: string
+                      example: "ADO Story Extractor API"
+                    monitor_running:
+                      type: boolean
+                      example: true
+            """
             return jsonify({
                 'status': 'healthy',
                 'timestamp': datetime.now().isoformat(),
@@ -124,7 +186,45 @@ class MonitorAPI:
         # Monitor control endpoints
         @self.app.route('/api/monitor/start', methods=['POST'])
         def start_monitor():
-            """Start the monitoring service"""
+            """Start the monitoring service
+            ---
+            tags:
+              - Monitor
+            responses:
+              200:
+                description: Monitor started successfully
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      example: true
+                    message:
+                      type: string
+                      example: "Monitor started successfully"
+                    status:
+                      type: object
+              400:
+                description: Monitor already running or not configured
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      example: false
+                    error:
+                      type: string
+              500:
+                description: Failed to start monitor
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      example: false
+                    error:
+                      type: string
+            """
             try:
                 if not self.monitor:
                     return jsonify({
@@ -163,7 +263,27 @@ class MonitorAPI:
 
         @self.app.route('/api/monitor/stop', methods=['POST'])
         def stop_monitor():
-            """Stop the monitoring service"""
+            """Stop the monitoring service
+            ---
+            tags:
+              - Monitor
+            responses:
+              200:
+                description: Monitor stopped successfully
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      example: true
+                    message:
+                      type: string
+                      example: "Monitor stopped successfully"
+              400:
+                description: Monitor not running or not configured
+              500:
+                description: Failed to stop monitor
+            """
             try:
                 if not self.monitor:
                     return jsonify({
@@ -194,7 +314,31 @@ class MonitorAPI:
 
         @self.app.route('/api/monitor/status', methods=['GET'])
         def get_monitor_status():
-            """Get current monitoring status"""
+            """Get current monitoring status
+            ---
+            tags:
+              - Monitor
+            responses:
+              200:
+                description: Current monitor status
+                schema:
+                  type: object
+                  properties:
+                    is_running:
+                      type: boolean
+                      example: true
+                    check_count:
+                      type: integer
+                      example: 42
+                    last_check:
+                      type: string
+                      example: "2025-12-30T10:00:00"
+                    epic_count:
+                      type: integer
+                      example: 5
+              400:
+                description: Monitor not configured
+            """
             try:
                 if not self.monitor:
                     return jsonify({
@@ -214,7 +358,31 @@ class MonitorAPI:
 
         @self.app.route('/api/epics', methods=['GET'])
         def get_epics():
-            """Get list of monitored EPICs with details"""
+            """Get list of monitored EPICs with details
+            ---
+            tags:
+              - Epics
+            responses:
+              200:
+                description: List of all monitored epics
+                schema:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        example: "12345"
+                      title:
+                        type: string
+                        example: "Epic Title"
+                      state:
+                        type: string
+                        example: "Active"
+                      story_count:
+                        type: integer
+                        example: 15
+            """
             try:
                 if not self.monitor:
                     return jsonify([])
