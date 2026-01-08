@@ -102,22 +102,30 @@ class EnhancedEpicChangeMonitor:
             logger.addHandler(file_handler)
         return logger
     
-    def _load_processed_epics(self) -> Set[str]:
-        """Load the set of epics that have already been processed"""
+    def _load_processed_epics(self) -> Dict[str, Set[str]]:
+        """Load the dictionary of processed items keyed by requirement type (Epic, Feature, etc.)"""
         try:
             if self.state_file.exists():
                 with open(self.state_file, 'r') as f:
                     state_data = json.load(f)
-                return set(state_data.get('processed_epics', []))
+                # Handle migration from old format (single list) to new format (dict by type)
+                if 'processed_epics' in state_data and isinstance(state_data['processed_epics'], list):
+                    # Migrate old format: assume old list was for 'Epic' type
+                    self.logger.info("Migrating processed_epics from old format to new type-based format")
+                    return {'Epic': set(state_data['processed_epics'])}
+                elif 'processed_items_by_type' in state_data:
+                    # New format: dict keyed by requirement type
+                    return {k: set(v) for k, v in state_data['processed_items_by_type'].items()}
         except Exception as e:
             self.logger.error(f"Failed to load processed epics state: {e}")
-        return set()
+        return {}
     
     def _save_processed_epics(self):
-        """Save the set of processed epics to state file"""
+        """Save the dictionary of processed items by type to state file"""
         try:
             state_data = {
-                'processed_epics': list(self.processed_epics),
+                'processed_items_by_type': {k: list(v) for k, v in self.processed_epics.items()},
+                'current_requirement_type': self.config.requirement_type,
                 'last_updated': datetime.now().isoformat(),
                 'change_extraction_stats': {
                     epic_id: {
@@ -132,11 +140,27 @@ class EnhancedEpicChangeMonitor:
                 json.dump(state_data, f, indent=2)
         except Exception as e:
             self.logger.error(f"Failed to save processed epics state: {e}")
+    
+    def _get_processed_items_for_current_type(self) -> Set[str]:
+        """Get the set of processed items for the current requirement type"""
+        return self.processed_epics.get(self.config.requirement_type, set())
+    
+    def _add_processed_item(self, item_id: str):
+        """Add an item to the processed set for the current requirement type"""
+        if self.config.requirement_type not in self.processed_epics:
+            self.processed_epics[self.config.requirement_type] = set()
+        self.processed_epics[self.config.requirement_type].add(item_id)
+    
+    def _remove_processed_item(self, item_id: str):
+        """Remove an item from the processed set for the current requirement type"""
+        if self.config.requirement_type in self.processed_epics:
+            self.processed_epics[self.config.requirement_type].discard(item_id)
 
     def _load_existing_snapshots(self):
         """Load existing snapshots with enhanced state"""
         for epic_id in self.config.epic_ids or []:
             snapshot_file = self.snapshot_dir / f"epic_{epic_id}.json"
+            processed_items = self._get_processed_items_for_current_type()
             if snapshot_file.exists():
                 try:
                     with open(snapshot_file, 'r') as f:
@@ -146,7 +170,7 @@ class EnhancedEpicChangeMonitor:
                         epic_id=epic_id,
                         last_check=datetime.now(),
                         last_snapshot=snapshot_data,
-                        stories_extracted=epic_id in self.processed_epics,
+                        stories_extracted=epic_id in processed_items,
                         extracted_stories=stories,
                         change_extraction_count=0,
                         change_history=[]
@@ -157,7 +181,7 @@ class EnhancedEpicChangeMonitor:
                     self.monitored_epics[epic_id] = EnhancedEpicState(
                         epic_id=epic_id,
                         last_check=datetime.now(),
-                        stories_extracted=epic_id in self.processed_epics,
+                        stories_extracted=epic_id in processed_items,
                         extracted_stories=[],
                         change_extraction_count=0,
                         change_history=[]
@@ -166,7 +190,7 @@ class EnhancedEpicChangeMonitor:
                 self.monitored_epics[epic_id] = EnhancedEpicState(
                     epic_id=epic_id,
                     last_check=datetime.now(),
-                    stories_extracted=epic_id in self.processed_epics,
+                    stories_extracted=epic_id in processed_items,
                     extracted_stories=[],
                     change_extraction_count=0,
                     change_history=[]
@@ -176,6 +200,7 @@ class EnhancedEpicChangeMonitor:
         """Add an EPIC to monitoring and trigger immediate check/sync."""
         try:
             if epic_id not in self.monitored_epics:
+                processed_items = self._get_processed_items_for_current_type()
                 # Get initial snapshot
                 initial_snapshot = self.agent.get_epic_snapshot(epic_id)
                 if initial_snapshot:
@@ -183,7 +208,7 @@ class EnhancedEpicChangeMonitor:
                         epic_id=epic_id,
                         last_check=datetime.now(),
                         last_snapshot=initial_snapshot,
-                        stories_extracted=epic_id in self.processed_epics,
+                        stories_extracted=epic_id in processed_items,
                         extracted_stories=[],
                         change_extraction_count=0,
                         change_history=[]
@@ -201,7 +226,7 @@ class EnhancedEpicChangeMonitor:
                         epic_id=epic_id,
                         last_check=datetime.now(),
                         last_snapshot=None,
-                        stories_extracted=epic_id in self.processed_epics,
+                        stories_extracted=epic_id in processed_items,
                         extracted_stories=[],
                         change_extraction_count=0,
                         change_history=[]
@@ -319,15 +344,17 @@ class EnhancedEpicChangeMonitor:
                 self.logger.info(f"Stories already extracted for EPIC {epic_id}, skipping extraction (change-based extraction disabled)")
                 return False
             
-            if self.config.skip_duplicate_check or epic_id not in self.processed_epics:
+            processed_items = self._get_processed_items_for_current_type()
+            if self.config.skip_duplicate_check or epic_id not in processed_items:
                 return True
             else:
                 return False
         
         # Enhanced logic with change-based extraction
+        processed_items = self._get_processed_items_for_current_type()
         
         # For new EPICs (never processed)
-        if not state.stories_extracted and epic_id not in self.processed_epics:
+        if not state.stories_extracted and epic_id not in processed_items:
             self.logger.info(f"EPIC {epic_id} is new, proceeding with initial story extraction")
             return True
         
@@ -347,7 +374,7 @@ class EnhancedEpicChangeMonitor:
                 return False
         
         # Fallback to original logic
-        return self.config.skip_duplicate_check or epic_id not in self.processed_epics
+        return self.config.skip_duplicate_check or epic_id not in processed_items
 
     def _check_for_epic_changes_enhanced(self, epic_id: str) -> tuple[bool, float]:
         """Enhanced change detection with significance scoring"""
@@ -420,7 +447,7 @@ class EnhancedEpicChangeMonitor:
                     
                     # Mark epic as processed and update change tracking
                     if len(result.created_stories) > 0 or len(result.updated_stories) > 0:
-                        self.processed_epics.add(epic_id)
+                        self._add_processed_item(epic_id)
                         epic_state.stories_extracted = True
                         
                         # Update change-based extraction count

@@ -60,6 +60,8 @@ class StoryExtractionAgent:
                     print(f"[ERROR] StoryExtractionAgent: Failed to upload stories: {str(e)}")
                     result.error_message = f"Failed to upload stories: {str(e)}"
                     result.extraction_successful = False
+            
+            return result
 
         except Exception as e:
             # Accept string-based IDs (e.g., 'EPIC 1')

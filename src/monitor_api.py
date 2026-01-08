@@ -189,6 +189,11 @@ class MonitorAPI:
                 self.logger.info("[CONFIG-API] 🔨 Creating new MonitorConfig object")
                 new_config = MonitorConfig(**current_config)
                 
+                # Check if requirement_type changed - need to clear monitored items
+                old_requirement_type = getattr(self.monitor.config, 'requirement_type', 'Epic')
+                new_requirement_type = new_config.requirement_type
+                requirement_type_changed = old_requirement_type != new_requirement_type
+                
                 # Save the updated config to file
                 self.logger.info("[CONFIG-API] 💾 Saving updated config to config/monitor_config.json")
                 with open('config/monitor_config.json', 'w') as f:
@@ -198,6 +203,16 @@ class MonitorAPI:
                 # Update monitor with new config
                 self.logger.info("[CONFIG-API] 🔄 Updating monitor with new configuration")
                 self.monitor.config = new_config
+                
+                # Clear monitored epics when switching requirement type to force re-discovery
+                # Note: processed_epics is now a dict keyed by type, so we don't clear it
+                # Each type maintains its own separate tracking
+                if requirement_type_changed:
+                    self.logger.info(f"[CONFIG-API] 🔄 Requirement type changed: {old_requirement_type} → {new_requirement_type}")
+                    self.logger.info(f"[CONFIG-API] 🔄 Clearing monitored items for new type discovery (processed items preserved per type)")
+                    self.monitor.monitored_epics.clear()
+                    # Save state to persist the current requirement type
+                    self.monitor._save_processed_epics()
                 
                 # If epic_ids were updated, refresh the monitored epics
                 if 'epic_ids' in changes_made:
@@ -694,6 +709,54 @@ class MonitorAPI:
                     self.monitor.config.auto_extract_new_epics = new_auto_extract
                     config_changes['auto_extract_new_epics'] = {'old': old_auto_extract, 'new': new_auto_extract}
                     self.logger.info(f"[CONFIG-PUT] 🔄 Auto extract new epics changed: {old_auto_extract} → {new_auto_extract}")
+
+                # Update requirement_type in monitor config (important for Epic/Feature switching)
+                if 'requirement_type' in data:
+                    old_requirement_type = getattr(self.monitor.config, 'requirement_type', 'Epic')
+                    new_requirement_type = str(data['requirement_type'])
+                    self.monitor.config.requirement_type = new_requirement_type
+                    config_changes['requirement_type'] = {'old': old_requirement_type, 'new': new_requirement_type}
+                    self.logger.info(f"[CONFIG-PUT] 🔄 Requirement type changed: {old_requirement_type} → {new_requirement_type}")
+                    # Clear monitored epics when switching requirement type to force re-discovery
+                    # Note: processed_epics is now a dict keyed by type, so we don't clear it
+                    # Each type maintains its own separate tracking
+                    if old_requirement_type != new_requirement_type:
+                        self.logger.info(f"[CONFIG-PUT] 🔄 Clearing monitored items for new type discovery (processed items preserved per type)")
+                        self.monitor.monitored_epics.clear()
+                        # Save state to persist the current requirement type
+                        self.monitor._save_processed_epics()
+
+                # Update user_story_type in monitor config
+                if 'user_story_type' in data:
+                    old_user_story_type = getattr(self.monitor.config, 'user_story_type', 'User Story')
+                    new_user_story_type = str(data['user_story_type'])
+                    self.monitor.config.user_story_type = new_user_story_type
+                    config_changes['user_story_type'] = {'old': old_user_story_type, 'new': new_user_story_type}
+                    self.logger.info(f"[CONFIG-PUT] 🔄 User story type changed: {old_user_story_type} → {new_user_story_type}")
+
+                # Update story_extraction_type in monitor config
+                if 'story_extraction_type' in data:
+                    old_story_extraction_type = getattr(self.monitor.config, 'story_extraction_type', 'User Story')
+                    new_story_extraction_type = str(data['story_extraction_type'])
+                    self.monitor.config.story_extraction_type = new_story_extraction_type
+                    config_changes['story_extraction_type'] = {'old': old_story_extraction_type, 'new': new_story_extraction_type}
+                    self.logger.info(f"[CONFIG-PUT] 🔄 Story extraction type changed: {old_story_extraction_type} → {new_story_extraction_type}")
+
+                # Update test_case_extraction_type in monitor config
+                if 'test_case_extraction_type' in data:
+                    old_test_case_extraction_type = getattr(self.monitor.config, 'test_case_extraction_type', 'Test Case')
+                    new_test_case_extraction_type = str(data['test_case_extraction_type'])
+                    self.monitor.config.test_case_extraction_type = new_test_case_extraction_type
+                    config_changes['test_case_extraction_type'] = {'old': old_test_case_extraction_type, 'new': new_test_case_extraction_type}
+                    self.logger.info(f"[CONFIG-PUT] 🔄 Test case extraction type changed: {old_test_case_extraction_type} → {new_test_case_extraction_type}")
+
+                # Update auto_test_case_extraction in monitor config
+                if 'auto_test_case_extraction' in data:
+                    old_auto_test_case_extraction = getattr(self.monitor.config, 'auto_test_case_extraction', True)
+                    new_auto_test_case_extraction = bool(data['auto_test_case_extraction'])
+                    self.monitor.config.auto_test_case_extraction = new_auto_test_case_extraction
+                    config_changes['auto_test_case_extraction'] = {'old': old_auto_test_case_extraction, 'new': new_auto_test_case_extraction}
+                    self.logger.info(f"[CONFIG-PUT] 🔄 Auto test case extraction changed: {old_auto_test_case_extraction} → {new_auto_test_case_extraction}")
 
                 # Handle EPIC IDs
                 if 'epic_ids' in data and isinstance(data['epic_ids'], list):

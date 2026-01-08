@@ -111,28 +111,51 @@ class EpicChangeMonitor:
             logger.addHandler(file_handler)
         return logger
     
-    def _load_processed_epics(self) -> Set[str]:
-        """Load the set of epics that have already been processed (had stories extracted)"""
+    def _load_processed_epics(self) -> Dict[str, Set[str]]:
+        """Load the dictionary of processed items keyed by requirement type (Epic, Feature, etc.)"""
         try:
             if self.state_file.exists():
                 with open(self.state_file, 'r') as f:
                     state_data = json.load(f)
-                return set(state_data.get('processed_epics', []))
+                # Handle migration from old format (single list) to new format (dict by type)
+                if 'processed_epics' in state_data and isinstance(state_data['processed_epics'], list):
+                    # Migrate old format: assume old list was for 'Epic' type
+                    self.logger.info("Migrating processed_epics from old format to new type-based format")
+                    return {'Epic': set(state_data['processed_epics'])}
+                elif 'processed_items_by_type' in state_data:
+                    # New format: dict keyed by requirement type
+                    return {k: set(v) for k, v in state_data['processed_items_by_type'].items()}
         except Exception as e:
             self.logger.error(f"Failed to load processed epics state: {e}")
-        return set()
+        return {}
     
     def _save_processed_epics(self):
-        """Save the set of processed epics to state file"""
+        """Save the dictionary of processed items by type to state file"""
         try:
             state_data = {
-                'processed_epics': list(self.processed_epics),
+                'processed_items_by_type': {k: list(v) for k, v in self.processed_epics.items()},
+                'current_requirement_type': self.config.requirement_type,
                 'last_updated': datetime.now().isoformat()
             }
             with open(self.state_file, 'w') as f:
                 json.dump(state_data, f, indent=2)
         except Exception as e:
             self.logger.error(f"Failed to save processed epics state: {e}")
+    
+    def _get_processed_items_for_current_type(self) -> Set[str]:
+        """Get the set of processed items for the current requirement type"""
+        return self.processed_epics.get(self.config.requirement_type, set())
+    
+    def _add_processed_item(self, item_id: str):
+        """Add an item to the processed set for the current requirement type"""
+        if self.config.requirement_type not in self.processed_epics:
+            self.processed_epics[self.config.requirement_type] = set()
+        self.processed_epics[self.config.requirement_type].add(item_id)
+    
+    def _remove_processed_item(self, item_id: str):
+        """Remove an item from the processed set for the current requirement type"""
+        if self.config.requirement_type in self.processed_epics:
+            self.processed_epics[self.config.requirement_type].discard(item_id)
 
     def _load_existing_snapshots(self):
         for epic_id in self.config.epic_ids or []:
@@ -142,27 +165,30 @@ class EpicChangeMonitor:
                     with open(snapshot_file, 'r') as f:
                         snapshot_data = json.load(f)
                     stories = snapshot_data.get('stories', [])
+                    processed_items = self._get_processed_items_for_current_type()
                     self.monitored_epics[epic_id] = EpicMonitorState(
                         epic_id=epic_id,
                         last_check=datetime.now(),
                         last_snapshot=snapshot_data,
-                        stories_extracted=epic_id in self.processed_epics,
+                        stories_extracted=epic_id in processed_items,
                         extracted_stories=stories
                     )
                     self.logger.info(f"Loaded existing snapshot for EPIC {epic_id}")
                 except Exception as e:
                     self.logger.error(f"Failed to load snapshot for EPIC {epic_id}: {e}")
+                    processed_items = self._get_processed_items_for_current_type()
                     self.monitored_epics[epic_id] = EpicMonitorState(
                         epic_id=epic_id,
                         last_check=datetime.now(),
-                        stories_extracted=epic_id in self.processed_epics,
+                        stories_extracted=epic_id in processed_items,
                         extracted_stories=[]
                     )
             else:
+                processed_items = self._get_processed_items_for_current_type()
                 self.monitored_epics[epic_id] = EpicMonitorState(
                     epic_id=epic_id,
                     last_check=datetime.now(),
-                    stories_extracted=epic_id in self.processed_epics,
+                    stories_extracted=epic_id in processed_items,
                     extracted_stories=[]
                 )
 
@@ -242,13 +268,13 @@ class EpicChangeMonitor:
             # Try to get the EPIC work item to verify it exists
             work_item = self.agent.ado_client.get_work_item_by_id(epic_id)
             if work_item and work_item.fields:
-                # Check if it's an Epic
+                # Check if it's the correct Requirement type
                 work_item_type = work_item.fields.get("System.WorkItemType")
-                if work_item_type == "Epic":
-                    self.logger.debug(f"EPIC {epic_id} exists in Azure DevOps")
+                if work_item_type == self.config.requirement_type:
+                    self.logger.debug(f"Requirement {epic_id} exists in Azure DevOps")
                     return True
                 else:
-                    self.logger.warning(f"Work item {epic_id} exists but is not an Epic (type: {work_item_type})")
+                    self.logger.warning(f"Work item {epic_id} exists but is not a {self.config.requirement_type} (type: {work_item_type})")
                     return False
             else:
                 self.logger.warning(f"EPIC {epic_id} not found in Azure DevOps")
@@ -310,11 +336,10 @@ class EpicChangeMonitor:
                 del self.monitored_epics[epic_id]
                 self.logger.info(f"Removed EPIC {epic_id} from monitored epics list")
 
-            # Remove from processed epics if present
-            if epic_id in self.processed_epics:
-                self.processed_epics.remove(epic_id)
-                self._save_processed_epics()
-                self.logger.info(f"Removed EPIC {epic_id} from processed epics list")
+            # Remove from processed items if present
+            self._remove_processed_item(epic_id)
+            self._save_processed_epics()
+            self.logger.info(f"Removed EPIC {epic_id} from processed items list")
 
             # Remove snapshot file if it exists
             snapshot_file = self.snapshot_dir / f"epic_{epic_id}.json"
@@ -345,7 +370,8 @@ class EpicChangeMonitor:
             return False
 
         # If stories already extracted and duplicate check is enabled, skip
-        if not self.config.skip_duplicate_check and epic_id in self.processed_epics:
+        processed_items = self._get_processed_items_for_current_type()
+        if not self.config.skip_duplicate_check and epic_id in processed_items:
             self.logger.info(f"Epic {epic_id} already has stories extracted. Skipping to prevent duplicates.")
             return False
 
@@ -354,7 +380,7 @@ class EpicChangeMonitor:
             existing_ado_stories = self.agent.ado_client.get_child_stories(int(epic_id))
             if existing_ado_stories:
                 self.logger.info(f"Epic {epic_id} already has {len(existing_ado_stories)} stories in ADO. Marking as processed.")
-                self.processed_epics.add(epic_id)
+                self._add_processed_item(epic_id)
                 state.stories_extracted = True
                 self._save_processed_epics()
                 return False
@@ -385,7 +411,7 @@ class EpicChangeMonitor:
                     
                     # Mark epic as processed if stories were created
                     if len(result.created_stories) > 0:
-                        self.processed_epics.add(epic_id)
+                        self._add_processed_item(epic_id)
                         epic_state.stories_extracted = True
                         self._save_processed_epics()
                     
@@ -515,12 +541,13 @@ class EpicChangeMonitor:
             self.logger.info("Monitor loop exited cleanly.")
 
     def fetch_all_epic_ids(self) -> List[str]:
-        """Fetch all Epic IDs from Azure DevOps (filtered by work item type 'Epic')."""
+        """Fetch all Requirement IDs from Azure DevOps (filtered by work item type)."""
         try:
-            requirements = self.agent.ado_client.get_requirements(work_item_type="Epic")
+            self.logger.info(f"Fetching requirements with type: {self.config.requirement_type}")
+            requirements = self.agent.ado_client.get_requirements(work_item_type=self.config.requirement_type)
             return [str(req.id) for req in requirements]
         except Exception as e:
-            self.logger.error(f"Failed to fetch all Epics: {e}")
+            self.logger.error(f"Failed to fetch all Requirements ({self.config.requirement_type}): {e}")
             return []
 
     def update_monitored_epics(self):
@@ -538,13 +565,14 @@ class EpicChangeMonitor:
             added_successfully = self.add_epic(epic_id)
             
             # Only extract stories if this epic hasn't been processed before
-            if added_successfully and self.config.auto_extract_new_epics and epic_id not in self.processed_epics:
+            processed_items = self._get_processed_items_for_current_type()
+            if added_successfully and self.config.auto_extract_new_epics and epic_id not in processed_items:
                 self.logger.info(f"Auto-extraction enabled: Extracting stories for new Epic {epic_id}.")
                 try:
                     extraction_result = self.agent.synchronize_epic(epic_id)
                     if extraction_result.sync_successful:
                         # Mark epic as processed
-                        self.processed_epics.add(epic_id)
+                        self._add_processed_item(epic_id)
                         self.monitored_epics[epic_id].stories_extracted = True
                         self._save_processed_epics()
                         
@@ -554,7 +582,7 @@ class EpicChangeMonitor:
                         self.logger.error(f"Failed to extract and synchronize stories for new Epic {epic_id}: {extraction_result.error_message}")
                 except Exception as e:
                     self.logger.error(f"Exception during extraction for new Epic {epic_id}: {e}")
-            elif added_successfully and epic_id in self.processed_epics:
+            elif added_successfully and epic_id in processed_items:
                 self.logger.info(f"Epic {epic_id} has already been processed. Skipping story extraction.")
             elif added_successfully:
                 self.logger.info(f"Auto-extraction disabled: Skipping story extraction for new Epic {epic_id}. Only monitoring for changes.")
@@ -686,14 +714,18 @@ class EpicChangeMonitor:
 
     def get_monitoring_statistics(self) -> Dict:
         """Get detailed monitoring statistics"""
+        # Get processed items count for current type
+        processed_items = self._get_processed_items_for_current_type()
         stats = {
             'total_epics_monitored': len(self.monitored_epics),
-            'epics_with_stories_extracted': len(self.processed_epics),
+            'epics_with_stories_extracted': len(processed_items),
             'epics_with_errors': 0,
             'epics_with_snapshots': 0,
             'total_extracted_stories': 0,
             'successful_syncs': 0,
-            'failed_syncs': 0
+            'failed_syncs': 0,
+            'current_requirement_type': self.config.requirement_type,
+            'processed_items_by_type': {k: len(v) for k, v in self.processed_epics.items()}
         }
         
         for epic_id, state in self.monitored_epics.items():
@@ -877,8 +909,9 @@ class EpicChangeMonitor:
     def reset_epic_processed_state(self, epic_id: str) -> bool:
         """Reset the processed state of an EPIC to allow re-extraction if needed"""
         try:
-            if epic_id in self.processed_epics:
-                self.processed_epics.remove(epic_id)
+            processed_items = self._get_processed_items_for_current_type()
+            if epic_id in processed_items:
+                self._remove_processed_item(epic_id)
                 self._save_processed_epics()
                 
             if epic_id in self.monitored_epics:
@@ -940,7 +973,10 @@ def load_config_from_file(config_file: str) -> MonitorConfig:
     try:
         with open(config_file, 'r') as f:
             config_data = json.load(f)
-        return MonitorConfig(**config_data)
+        # Filter out ADO and other non-MonitorConfig settings
+        monitor_settings = {k: v for k, v in config_data.items() 
+                          if not k.startswith('ado_') and k not in ['openai_api_key']}
+        return MonitorConfig(**monitor_settings)
     except Exception as e:
         logging.error(f"Failed to load config from {config_file}: {e}")
         return MonitorConfig()

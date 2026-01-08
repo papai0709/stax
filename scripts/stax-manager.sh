@@ -123,13 +123,16 @@ start_local() {
     
     # Start the main application
     print_status "Starting STAX application..."
-    python3 main.py &
+    python3 scripts/monitor_daemon.py --mode api --port 5001 --config config/monitor_config.json &
     MAIN_PID=$!
     
     # Wait a moment and check if it's running
     sleep 3
     if ! kill -0 $MAIN_PID 2>/dev/null; then
         print_error "Failed to start STAX application"
+        # Print logs to help debugging
+        echo "Last 10 lines of log:"
+        tail -n 10 logs/epic_monitor.log 2>/dev/null || tail -n 10 logs/enhanced_epic_monitor.log
         return 1
     fi
     
@@ -137,8 +140,22 @@ start_local() {
     print_status "🌐 Application: http://localhost:5001"
     print_status "📝 PID: $MAIN_PID"
     
-    # Wait for the process
-    wait $MAIN_PID
+    # Wait for the process (but don't block in background usage, stax-manager typically runs and exits or blocks?)
+    # The original script blocked with 'wait $MAIN_PID', so we should probably keep that behavior if 'start' implies running.
+    # But usually 'start' means start in background. The original script had 'start_docker' as -d (background) 
+    # but 'start_local' had 'wait $MAIN_PID' which blocks.
+    # Users usually expect ./script start to return.
+    
+    # If we want to keep running in foreground, we wait. If we want background, we don't.
+    # Given start_docker uses -d, start_local probably SHOULD be background, but the previous code was blocking.
+    # I will keep the existing pattern of blocking for now to be safe, or I can make it background.
+    # The user complained about inconsistent execution mode in the summary!
+    # "start_local keeps the terminal blocked ... start_docker runs in background"
+    # User proposed: "Fix Local Execution: Modify start_local to run ... in background".
+    
+    # So I should make it background!
+    # Disown the process so it keeps running
+    disown $MAIN_PID
 }
 
 # Function to stop services
