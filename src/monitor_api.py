@@ -1106,6 +1106,135 @@ class MonitorAPI:
                 self.logger.error(f"Error in force check: {str(e)}")
                 return jsonify({'error': f'Force check failed: {str(e)}'}), 500
 
+        # =====================================
+        # Feature Hierarchy API Endpoints
+        # =====================================
+
+        @self.app.route('/api/epics/<epic_id>/hierarchy', methods=['GET'])
+        def get_epic_hierarchy(epic_id):
+            """Get the full Epic → Feature → Story hierarchy for an Epic"""
+            try:
+                if not self.monitor:
+                    return jsonify({'error': 'Monitor not configured'}), 400
+
+                self.logger.info(f"Getting hierarchy for Epic {epic_id}")
+                hierarchy = self.monitor.get_epic_with_features(epic_id)
+                
+                if not hierarchy:
+                    return jsonify({'error': f'Could not get hierarchy for Epic {epic_id}'}), 404
+                
+                return jsonify({
+                    'success': True,
+                    'epic': hierarchy
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting hierarchy for Epic {epic_id}: {str(e)}")
+                return jsonify({'error': f'Failed to get hierarchy: {str(e)}'}), 500
+
+        @self.app.route('/api/epics/<epic_id>/features', methods=['GET'])
+        def get_features_from_epic(epic_id):
+            """Get all Features from an Epic"""
+            try:
+                if not self.monitor:
+                    return jsonify({'error': 'Monitor not configured'}), 400
+
+                self.logger.info(f"Getting features for Epic {epic_id}")
+                features = self.agent.ado_client.get_features_from_epic(int(epic_id))
+                
+                return jsonify({
+                    'success': True,
+                    'epic_id': epic_id,
+                    'features': features,
+                    'feature_count': len(features)
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting features for Epic {epic_id}: {str(e)}")
+                return jsonify({'error': f'Failed to get features: {str(e)}'}), 500
+
+        @self.app.route('/api/features/<feature_id>/stories', methods=['GET'])
+        def get_stories_from_feature(feature_id):
+            """Get all Stories from a Feature"""
+            try:
+                if not self.monitor:
+                    return jsonify({'error': 'Monitor not configured'}), 400
+
+                self.logger.info(f"Getting stories for Feature {feature_id}")
+                stories = self.agent.ado_client.get_stories_from_feature(int(feature_id))
+                
+                # Get feature details
+                feature_details = self.agent.ado_client.get_feature_details(int(feature_id))
+                
+                return jsonify({
+                    'success': True,
+                    'feature_id': feature_id,
+                    'feature': feature_details,
+                    'stories': stories,
+                    'story_count': len(stories)
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting stories for Feature {feature_id}: {str(e)}")
+                return jsonify({'error': f'Failed to get stories: {str(e)}'}), 500
+
+        @self.app.route('/api/epics/<epic_id>/sync-hierarchy', methods=['POST'])
+        def sync_epic_hierarchy(epic_id):
+            """Sync an Epic with its full Feature → Story hierarchy"""
+            try:
+                if not self.monitor:
+                    return jsonify({'error': 'Monitor not configured'}), 400
+
+                self.logger.info(f"Starting hierarchy sync for Epic {epic_id}")
+                result = self.monitor.sync_epic_hierarchy(epic_id)
+                
+                return jsonify({
+                    'success': result.get('success', False),
+                    'result': result
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error syncing hierarchy for Epic {epic_id}: {str(e)}")
+                return jsonify({'error': f'Failed to sync hierarchy: {str(e)}'}), 500
+
+        @self.app.route('/api/hierarchy/status', methods=['GET'])
+        def get_hierarchy_status():
+            """Get the current status of all monitored Epics with their feature hierarchy"""
+            try:
+                if not self.monitor:
+                    return jsonify({'error': 'Monitor not configured'}), 400
+
+                status = self.monitor.get_hierarchy_status()
+                
+                return jsonify({
+                    'success': True,
+                    'status': status
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting hierarchy status: {str(e)}")
+                return jsonify({'error': f'Failed to get hierarchy status: {str(e)}'}), 500
+
+        @self.app.route('/api/features', methods=['GET'])
+        def get_all_features():
+            """Get all Features in the project"""
+            try:
+                if not self.monitor:
+                    return jsonify({'error': 'Monitor not configured'}), 400
+
+                self.logger.info("Getting all Features in project")
+                features = self.agent.ado_client.get_all_features_in_project()
+                
+                return jsonify({
+                    'success': True,
+                    'features': features,
+                    'feature_count': len(features)
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting all features: {str(e)}")
+                return jsonify({'error': f'Failed to get features: {str(e)}'}), 500
+
         @self.app.route('/api/stories/<story_id>/test-cases', methods=['POST'])
         def extract_test_cases_for_story(story_id):
             """Extract test cases for a specific story"""

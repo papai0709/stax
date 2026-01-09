@@ -278,6 +278,167 @@ class ADOClient:
         except Exception as e:
             raise Exception(f"Failed to get child work items for parent {parent_id}: {str(e)}")
 
+    def get_features_from_epic(self, epic_id: int) -> List[Dict[str, Any]]:
+        """Get all child Features from an Epic"""
+        try:
+            print(f"[DEBUG] Getting features for Epic {epic_id}")
+            child_work_items = self.get_child_work_items(epic_id)
+            features = [
+                item for item in child_work_items 
+                if item.get('type', '').lower() == 'feature'
+            ]
+            print(f"[DEBUG] Found {len(features)} features for Epic {epic_id}")
+            return features
+        except Exception as e:
+            print(f"[ERROR] Failed to get features from Epic {epic_id}: {str(e)}")
+            return []
+
+    def get_stories_from_feature(self, feature_id: int) -> List[Dict[str, Any]]:
+        """Get all child User Stories from a Feature"""
+        try:
+            print(f"[DEBUG] Getting stories for Feature {feature_id}")
+            child_work_items = self.get_child_work_items(feature_id)
+            stories = [
+                item for item in child_work_items 
+                if item.get('type', '').lower() in ['user story', 'story']
+            ]
+            print(f"[DEBUG] Found {len(stories)} stories for Feature {feature_id}")
+            return stories
+        except Exception as e:
+            print(f"[ERROR] Failed to get stories from Feature {feature_id}: {str(e)}")
+            return []
+
+    def get_epic_hierarchy(self, epic_id: int) -> Dict[str, Any]:
+        """Get the full Epic → Feature → Story hierarchy
+        
+        Returns a dictionary with the Epic details and all features,
+        where each feature contains its child stories.
+        """
+        try:
+            print(f"[INFO] Building hierarchy for Epic {epic_id}")
+            
+            # Get Epic details
+            epic_work_item = self.wit_client.get_work_item(
+                id=epic_id,
+                fields=["System.Id", "System.Title", "System.Description", "System.State"]
+            )
+            
+            epic_data = {
+                'id': epic_work_item.id,
+                'title': epic_work_item.fields.get('System.Title', ''),
+                'description': epic_work_item.fields.get('System.Description', ''),
+                'state': epic_work_item.fields.get('System.State', ''),
+                'type': 'Epic',
+                'features': [],
+                'direct_stories': []  # Stories directly under Epic (not under a Feature)
+            }
+            
+            # Get all child work items for the Epic
+            child_work_items = self.get_child_work_items(epic_id)
+            
+            for child in child_work_items:
+                child_type = child.get('type', '').lower()
+                
+                if child_type == 'feature':
+                    # This is a Feature - get its child stories
+                    feature_data = {
+                        'id': child['id'],
+                        'title': child['title'],
+                        'state': child['state'],
+                        'type': 'Feature',
+                        'stories': []
+                    }
+                    
+                    # Get stories under this feature
+                    feature_stories = self.get_stories_from_feature(child['id'])
+                    feature_data['stories'] = feature_stories
+                    
+                    epic_data['features'].append(feature_data)
+                    
+                elif child_type in ['user story', 'story']:
+                    # This is a Story directly under the Epic
+                    epic_data['direct_stories'].append(child)
+            
+            # Summary statistics
+            total_features = len(epic_data['features'])
+            total_stories = epic_data.get('direct_stories', 0)
+            for feature in epic_data['features']:
+                total_stories += len(feature.get('stories', []))
+            
+            print(f"[INFO] Epic {epic_id} hierarchy: {total_features} features, {total_stories} total stories")
+            
+            return epic_data
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to build hierarchy for Epic {epic_id}: {str(e)}")
+            raise Exception(f"Failed to build Epic hierarchy: {str(e)}")
+
+    def get_feature_details(self, feature_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed information for a Feature work item"""
+        try:
+            work_item = self.wit_client.get_work_item(
+                id=feature_id,
+                fields=["System.Id", "System.Title", "System.Description", "System.State", "System.WorkItemType"]
+            )
+            
+            return {
+                'id': work_item.id,
+                'title': work_item.fields.get('System.Title', ''),
+                'description': work_item.fields.get('System.Description', ''),
+                'state': work_item.fields.get('System.State', ''),
+                'type': work_item.fields.get('System.WorkItemType', '')
+            }
+        except Exception as e:
+            print(f"[ERROR] Failed to get Feature {feature_id} details: {str(e)}")
+            return None
+
+    def get_all_features_in_project(self) -> List[Dict[str, Any]]:
+        """Get all Feature work items in the project"""
+        try:
+            print(f"[INFO] Fetching all Features from project {self.project}")
+            
+            wiql_query = f"""
+            SELECT [System.Id], [System.Title], [System.Description], [System.State]
+            FROM WorkItems
+            WHERE [System.TeamProject] = '{self.project}'
+            AND [System.WorkItemType] = 'Feature'
+            """
+            
+            wiql_result = self.wit_client.query_by_wiql({"query": wiql_query})
+            
+            if not wiql_result.work_items:
+                return []
+            
+            work_item_ids = [item.id for item in wiql_result.work_items]
+            features = []
+            
+            # Process in batches
+            batch_size = 50
+            for i in range(0, len(work_item_ids), batch_size):
+                batch_ids = work_item_ids[i:i + batch_size]
+                try:
+                    work_items_batch = self.wit_client.get_work_items(
+                        ids=batch_ids,
+                        fields=["System.Id", "System.Title", "System.Description", "System.State"]
+                    )
+                    for item in work_items_batch:
+                        features.append({
+                            'id': item.id,
+                            'title': item.fields.get('System.Title', ''),
+                            'description': item.fields.get('System.Description', ''),
+                            'state': item.fields.get('System.State', '')
+                        })
+                except Exception as e:
+                    print(f"[WARNING] Failed to fetch Feature batch: {str(e)}")
+                    continue
+            
+            print(f"[INFO] Found {len(features)} Features in project")
+            return features
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to get Features: {str(e)}")
+            return []
+
     def get_requirement_by_id(self, requirement_id) -> Optional[Requirement]:
         """Get a single requirement by numeric ID or by title if not numeric"""
         try:

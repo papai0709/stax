@@ -54,6 +54,24 @@ class MonitorConfig:
     # Enhanced configuration options
     extraction_cooldown_hours: int = 24  # Cooldown period before re-extraction (0 to disable)
     enable_content_hash_comparison: bool = True  # Use hash-based change detection
+    
+    # Feature hierarchy options (Epic → Feature → Story)
+    enable_feature_hierarchy: bool = True  # Enable Epic → Feature → Story hierarchy extraction
+    auto_extract_features_from_epic: bool = True  # Auto-extract Features when processing an Epic
+    auto_extract_stories_from_feature: bool = True  # Auto-extract Stories when processing a Feature
+
+@dataclass
+class FeatureMonitorState:
+    """State tracking for a monitored Feature within an Epic"""
+    feature_id: str
+    epic_id: str  # Parent Epic ID
+    title: str = ""
+    last_check: Optional[datetime] = None
+    last_snapshot: Optional[Dict] = None
+    consecutive_errors: int = 0
+    stories_extracted: bool = False
+    extracted_stories: List[Dict] = None  # List of extracted stories for this feature
+    story_count: int = 0
 
 
 @dataclass
@@ -66,6 +84,10 @@ class EpicMonitorState:
     last_sync_result: Optional[Dict] = None
     stories_extracted: bool = False  # Track if stories have been extracted for this epic
     extracted_stories: List[Dict] = None  # List of extracted stories for duplicate prevention
+    # Feature hierarchy tracking
+    features: List[FeatureMonitorState] = None  # List of features under this Epic
+    feature_count: int = 0  # Number of features detected
+    total_story_count: int = 0  # Total stories across all features
 
 
 class EpicChangeMonitor:
@@ -966,6 +988,281 @@ class EpicChangeMonitor:
         except Exception as e:
             self.logger.error(f"Error checking cooldown period for EPIC {epic_id}: {e}")
             return True  # Default to allowing extraction on error
+
+    # =====================================
+    # Feature Hierarchy Extraction Methods
+    # =====================================
+
+    def get_epic_with_features(self, epic_id: str) -> Dict:
+        """Get Epic with its Features and Stories hierarchy"""
+        try:
+            self.logger.info(f"Getting Epic {epic_id} with feature hierarchy")
+            hierarchy = self.agent.ado_client.get_epic_hierarchy(int(epic_id))
+            
+            # Update the monitored epic state with feature information
+            if epic_id in self.monitored_epics:
+                epic_state = self.monitored_epics[epic_id]
+                epic_state.feature_count = len(hierarchy.get('features', []))
+                
+                # Calculate total stories
+                total_stories = len(hierarchy.get('direct_stories', []))
+                for feature in hierarchy.get('features', []):
+                    total_stories += len(feature.get('stories', []))
+                epic_state.total_story_count = total_stories
+                
+                # Update feature states
+                epic_state.features = []
+                for feature in hierarchy.get('features', []):
+                    feature_state = FeatureMonitorState(
+                        feature_id=str(feature['id']),
+                        epic_id=epic_id,
+                        title=feature.get('title', ''),
+                        last_check=datetime.now(),
+                        story_count=len(feature.get('stories', []))
+                    )
+                    epic_state.features.append(feature_state)
+            
+            self.logger.info(f"Epic {epic_id}: {len(hierarchy.get('features', []))} features, "
+                           f"{len(hierarchy.get('direct_stories', []))} direct stories")
+            
+            return hierarchy
+            
+        except Exception as e:
+            self.logger.error(f"Error getting Epic {epic_id} with features: {e}")
+            return {}
+
+    def extract_features_from_epic(self, epic_id: str) -> List[Dict]:
+        """Extract Features from an Epic and optionally extract Stories from each Feature"""
+        try:
+            if not self.config.enable_feature_hierarchy:
+                self.logger.info("Feature hierarchy disabled, skipping feature extraction")
+                return []
+            
+            self.logger.info(f"🔍 Extracting features from Epic {epic_id}")
+            
+            # Get features from the Epic
+            features = self.agent.ado_client.get_features_from_epic(int(epic_id))
+            
+            if not features:
+                self.logger.info(f"No features found for Epic {epic_id}")
+                return []
+            
+            self.logger.info(f"Found {len(features)} features in Epic {epic_id}")
+            
+            # Process each feature
+            extracted_features = []
+            for feature in features:
+                feature_id = str(feature['id'])
+                feature_title = feature.get('title', 'Unknown')
+                
+                self.logger.info(f"  📁 Feature {feature_id}: {feature_title}")
+                
+                # Get stories for this feature if auto extraction is enabled
+                stories = []
+                if self.config.auto_extract_stories_from_feature:
+                    stories = self.extract_stories_from_feature(feature_id, epic_id)
+                
+                extracted_features.append({
+                    'id': feature_id,
+                    'title': feature_title,
+                    'state': feature.get('state', ''),
+                    'epic_id': epic_id,
+                    'stories': stories,
+                    'story_count': len(stories)
+                })
+            
+            # Update Epic state with feature information
+            if epic_id in self.monitored_epics:
+                epic_state = self.monitored_epics[epic_id]
+                epic_state.feature_count = len(extracted_features)
+                
+                total_stories = 0
+                epic_state.features = []
+                for feature in extracted_features:
+                    feature_state = FeatureMonitorState(
+                        feature_id=feature['id'],
+                        epic_id=epic_id,
+                        title=feature['title'],
+                        last_check=datetime.now(),
+                        story_count=feature['story_count']
+                    )
+                    epic_state.features.append(feature_state)
+                    total_stories += feature['story_count']
+                
+                epic_state.total_story_count = total_stories
+                
+            self.logger.info(f"✅ Extracted {len(extracted_features)} features from Epic {epic_id}")
+            return extracted_features
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting features from Epic {epic_id}: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return []
+
+    def extract_stories_from_feature(self, feature_id: str, epic_id: str) -> List[Dict]:
+        """Extract Stories from a Feature"""
+        try:
+            self.logger.info(f"    📋 Extracting stories from Feature {feature_id}")
+            
+            # Get stories from the feature
+            stories = self.agent.ado_client.get_stories_from_feature(int(feature_id))
+            
+            if not stories:
+                self.logger.info(f"    No stories found for Feature {feature_id}")
+                return []
+            
+            self.logger.info(f"    Found {len(stories)} stories in Feature {feature_id}")
+            
+            extracted_stories = []
+            for story in stories:
+                story_data = {
+                    'id': str(story['id']),
+                    'title': story.get('title', 'Unknown'),
+                    'state': story.get('state', ''),
+                    'feature_id': feature_id,
+                    'epic_id': epic_id
+                }
+                extracted_stories.append(story_data)
+                self.logger.debug(f"      📖 Story {story_data['id']}: {story_data['title']}")
+            
+            return extracted_stories
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting stories from Feature {feature_id}: {e}")
+            return []
+
+    def sync_epic_hierarchy(self, epic_id: str) -> Dict:
+        """Synchronize an Epic with its full Feature → Story hierarchy
+        
+        This is the main method for processing the Epic → Feature → Story flow.
+        When an Epic is detected:
+        1. Extract all Features from the Epic
+        2. For each Feature, extract all Stories
+        3. Optionally generate new stories via AI if none exist
+        """
+        try:
+            self.logger.info(f"🚀 Starting hierarchy sync for Epic {epic_id}")
+            
+            result = {
+                'epic_id': epic_id,
+                'success': False,
+                'features_found': 0,
+                'features_processed': [],
+                'total_stories_found': 0,
+                'new_stories_generated': 0,
+                'error_message': None
+            }
+            
+            if not self.config.enable_feature_hierarchy:
+                self.logger.info("Feature hierarchy disabled, falling back to standard sync")
+                sync_result = self._sync_epic(epic_id)
+                result['success'] = sync_result.sync_successful
+                return result
+            
+            # Step 1: Get the Epic hierarchy
+            hierarchy = self.get_epic_with_features(epic_id)
+            
+            if not hierarchy:
+                result['error_message'] = f"Failed to get hierarchy for Epic {epic_id}"
+                return result
+            
+            features = hierarchy.get('features', [])
+            direct_stories = hierarchy.get('direct_stories', [])
+            
+            result['features_found'] = len(features)
+            result['total_stories_found'] = len(direct_stories)
+            
+            self.logger.info(f"Epic {epic_id} has {len(features)} features and {len(direct_stories)} direct stories")
+            
+            # Step 2: Process each Feature
+            for feature in features:
+                feature_id = str(feature['id'])
+                feature_title = feature.get('title', 'Unknown')
+                feature_stories = feature.get('stories', [])
+                
+                self.logger.info(f"📁 Processing Feature {feature_id}: {feature_title} ({len(feature_stories)} stories)")
+                
+                feature_result = {
+                    'id': feature_id,
+                    'title': feature_title,
+                    'stories_found': len(feature_stories),
+                    'new_stories_generated': 0
+                }
+                
+                # If auto extract is enabled and no stories exist, generate them
+                if self.config.auto_extract_stories_from_feature and len(feature_stories) == 0:
+                    self.logger.info(f"  No stories found for Feature {feature_id}, generating via AI...")
+                    try:
+                        # Use the agent to generate stories for this feature
+                        extraction_result = self.agent.process_requirement_by_id(feature_id, upload_to_ado=True)
+                        if extraction_result and hasattr(extraction_result, 'stories'):
+                            new_count = len(extraction_result.stories)
+                            feature_result['new_stories_generated'] = new_count
+                            result['new_stories_generated'] += new_count
+                            self.logger.info(f"  ✅ Generated {new_count} stories for Feature {feature_id}")
+                    except Exception as e:
+                        self.logger.error(f"  ❌ Failed to generate stories for Feature {feature_id}: {e}")
+                
+                result['features_processed'].append(feature_result)
+                result['total_stories_found'] += len(feature_stories)
+            
+            # Step 3: Mark Epic as processed
+            if epic_id in self.monitored_epics:
+                self.monitored_epics[epic_id].stories_extracted = True
+                self._add_processed_item(epic_id)
+                self._save_processed_epics()
+            
+            result['success'] = True
+            self.logger.info(f"✅ Hierarchy sync complete for Epic {epic_id}: "
+                           f"{result['features_found']} features, {result['total_stories_found']} stories")
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error syncing Epic {epic_id} hierarchy: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {
+                'epic_id': epic_id,
+                'success': False,
+                'error_message': str(e)
+            }
+
+    def get_hierarchy_status(self) -> Dict:
+        """Get the current status of all monitored Epics with their feature hierarchy"""
+        status = {
+            'total_epics': len(self.monitored_epics),
+            'total_features': 0,
+            'total_stories': 0,
+            'epics': []
+        }
+        
+        for epic_id, state in self.monitored_epics.items():
+            epic_data = {
+                'id': epic_id,
+                'features': [],
+                'feature_count': getattr(state, 'feature_count', 0),
+                'total_story_count': getattr(state, 'total_story_count', 0),
+                'stories_extracted': state.stories_extracted,
+                'last_check': state.last_check.isoformat() if state.last_check else None
+            }
+            
+            # Add feature details if available
+            if hasattr(state, 'features') and state.features:
+                for feature_state in state.features:
+                    epic_data['features'].append({
+                        'id': feature_state.feature_id,
+                        'title': feature_state.title,
+                        'story_count': feature_state.story_count,
+                        'stories_extracted': feature_state.stories_extracted
+                    })
+            
+            status['total_features'] += epic_data['feature_count']
+            status['total_stories'] += epic_data['total_story_count']
+            status['epics'].append(epic_data)
+        
+        return status
 
 
 def load_config_from_file(config_file: str) -> MonitorConfig:
