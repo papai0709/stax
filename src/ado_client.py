@@ -361,7 +361,7 @@ class ADOClient:
             
             # Summary statistics
             total_features = len(epic_data['features'])
-            total_stories = epic_data.get('direct_stories', 0)
+            total_stories = len(epic_data.get('direct_stories', []))  # Count direct stories
             for feature in epic_data['features']:
                 total_stories += len(feature.get('stories', []))
             
