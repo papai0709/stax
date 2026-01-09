@@ -997,7 +997,17 @@ class EpicChangeMonitor:
         """Get Epic with its Features and Stories hierarchy"""
         try:
             self.logger.info(f"Getting Epic {epic_id} with feature hierarchy")
+            
+            # Ensure the Epic is being monitored
+            if epic_id not in self.monitored_epics:
+                self.logger.info(f"Epic {epic_id} not in monitored list, adding it first...")
+                self.add_epic(epic_id)
+            
             hierarchy = self.agent.ado_client.get_epic_hierarchy(int(epic_id))
+            
+            if not hierarchy or not hierarchy.get('id'):
+                self.logger.error(f"Failed to get hierarchy for Epic {epic_id} - empty or invalid response")
+                return {}
             
             # Update the monitored epic state with feature information
             if epic_id in self.monitored_epics:
@@ -1029,6 +1039,8 @@ class EpicChangeMonitor:
             
         except Exception as e:
             self.logger.error(f"Error getting Epic {epic_id} with features: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return {}
 
     def extract_features_from_epic(self, epic_id: str) -> List[Dict]:
