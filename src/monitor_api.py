@@ -508,7 +508,9 @@ class MonitorAPI:
                     return jsonify([])
 
                 epics_data = []
-                for epic_id, epic_state in self.monitor.monitored_epics.items():
+                # Create a copy to prevent "dictionary changed size during iteration" error
+                epic_items = list(self.monitor.monitored_epics.items())
+                for epic_id, epic_state in epic_items:
                     try:
                         # Get EPIC details from Azure DevOps
                         epic_info = self.agent.ado_client.get_work_item(int(epic_id))
@@ -574,8 +576,9 @@ class MonitorAPI:
                 total_stories = 0
                 total_test_cases = 0
 
-                # Count changed EPICs and stories
-                for epic_id, epic_state in self.monitor.monitored_epics.items():
+                # Count changed EPICs and stories - create a copy to avoid iteration errors
+                epic_items = list(self.monitor.monitored_epics.items())
+                for epic_id, epic_state in epic_items:
                     try:
                         # Count as changed if it has been processed recently
                         if epic_state.last_check and epic_state.consecutive_errors == 0:
