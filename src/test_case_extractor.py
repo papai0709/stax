@@ -46,11 +46,13 @@ class TestCaseExtractor:
                 # Use TOON system prompt if enabled for token optimization
                 system_prompt = self._get_system_prompt_toon() if self.use_toon else self._get_system_prompt()
                 
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ]
+                
                 response_content = self.ai_client.chat_completion(
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
+                    messages=messages,
                     temperature=0.7,
                     max_tokens=3000
                 )
@@ -58,6 +60,17 @@ class TestCaseExtractor:
                 # Validate that we got a response
                 if not response_content or not response_content.strip():
                     raise ValueError("Empty response from AI service")
+                
+                # Track token usage for the dashboard
+                self.ai_client.track_usage(
+                    messages=messages,
+                    response_text=response_content,
+                    call_type="test_case_extraction",
+                    toon_enabled=self.use_toon,
+                    success=True,
+                    story_id=parent_story_id or "",
+                    story_title=user_story.heading
+                )
                 
                 self.logger.debug(f"AI response length: {len(response_content)} characters")
                 

@@ -82,18 +82,21 @@ class StoryExtractor:
         prompt = self._build_extraction_prompt(requirement, context, domain_guidelines, stakeholders)
         
         try:
+            # Build messages for AI call
+            messages = [
+                {
+                    "role": "system",
+                    "content": self._get_enhanced_system_prompt(context, domain_guidelines)
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ]
+            
             # Use the unified AI client for chat completion with enhanced system prompt
             content = self.ai_client.chat_completion(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": self._get_enhanced_system_prompt(context, domain_guidelines)
-                    },
-                    {
-                        "role": "user", 
-                        "content": prompt
-                    }
-                ],
+                messages=messages,
                 temperature=0.3,
                 max_tokens=3000  # Increased token limit for more detailed stories
             )
@@ -105,6 +108,17 @@ class StoryExtractor:
             # Check if response is empty
             if not content or not content.strip():
                 raise Exception("AI returned empty response")
+            
+            # Track token usage for the dashboard
+            self.ai_client.track_usage(
+                messages=messages,
+                response_text=content,
+                call_type="story_extraction",
+                toon_enabled=False,  # Story extraction doesn't use TOON yet
+                success=True,
+                story_id=str(requirement.id),
+                story_title=requirement.title
+            )
             
             # Clean up the response (remove markdown code blocks if present)
             content = content.strip()

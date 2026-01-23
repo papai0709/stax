@@ -1636,6 +1636,107 @@ class MonitorAPI:
                     'error': f'Internal server error: {str(e)}'
                 }), 500
 
+        # =====================================
+        # Token Dashboard API Endpoints
+        # =====================================
+
+        @self.app.route('/api/token-dashboard', methods=['GET'])
+        def get_token_dashboard():
+            """Get comprehensive token usage data for the dashboard"""
+            try:
+                from src.token_tracker import get_token_tracker
+                tracker = get_token_tracker()
+                dashboard_data = tracker.get_dashboard_data()
+                
+                # Add TOON configuration info
+                dashboard_data['toon_config'] = {
+                    'enabled': getattr(Settings, 'USE_TOON', True),
+                    'reduction_factor': 0.571,  # 57.1% reduction
+                    'description': 'Token Oriented Object Notation - reduces prompt tokens by ~57%'
+                }
+                
+                return jsonify({
+                    'success': True,
+                    'data': dashboard_data
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting token dashboard data: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to get token dashboard data: {str(e)}'
+                }), 500
+
+        @self.app.route('/api/token-dashboard/stats', methods=['GET'])
+        def get_token_stats():
+            """Get aggregated token usage statistics"""
+            try:
+                from src.token_tracker import get_token_tracker
+                tracker = get_token_tracker()
+                stats = tracker.get_stats()
+                
+                return jsonify({
+                    'success': True,
+                    'stats': stats
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting token stats: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to get token stats: {str(e)}'
+                }), 500
+
+        @self.app.route('/api/token-dashboard/records', methods=['GET'])
+        def get_token_records():
+            """Get recent token usage records"""
+            try:
+                from src.token_tracker import get_token_tracker
+                tracker = get_token_tracker()
+                
+                limit = int(request.args.get('limit', 50))
+                limit = min(limit, 100)  # Cap at 100 records
+                
+                records = tracker.get_recent_records(limit)
+                
+                return jsonify({
+                    'success': True,
+                    'records': records,
+                    'count': len(records)
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error getting token records: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to get token records: {str(e)}'
+                }), 500
+
+        @self.app.route('/api/token-dashboard/clear', methods=['POST'])
+        def clear_token_data():
+            """Clear all token usage data"""
+            try:
+                from src.token_tracker import get_token_tracker
+                tracker = get_token_tracker()
+                tracker.clear_data()
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'Token usage data cleared successfully'
+                })
+
+            except Exception as e:
+                self.logger.error(f"Error clearing token data: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to clear token data: {str(e)}'
+                }), 500
+
+        @self.app.route('/token-dashboard')
+        def token_dashboard_page():
+            """Render the Token Dashboard page"""
+            return render_template('token_dashboard.html')
+
     def run(self, host='0.0.0.0', debug=False):
         """Run the Flask application"""
         self.logger.info(f"Starting Monitor API server on {host}:{self.port}")

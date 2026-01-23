@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Usage Dashboard - TOON Analytics</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'toon': {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d'
+                        },
+                        'token': {
+                            50: '#faf5ff',
+                            500: '#a855f7',
+                            600: '#9333ea',
+                            700: '#7e22ce'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .stat-card {
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .progress-ring {
+            transition: stroke-dashoffset 0.5s ease;
+        }
+
+        @keyframes pulse-green {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .toon-enabled {
+            animation: pulse-green 2s infinite;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-300">
+    <div x-data="tokenDashboard()" x-init="init()" :class="darkMode ? 'dark' : ''" class="min-h-screen">
+        <!-- Header -->
+        <header
+            class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-300">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center space-x-4">
+                        <a href="/"
+                            class="flex items-center space-x-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+                            <i class="fas fa-arrow-left"></i>
+                            <span>Back to Dashboard</span>
+                        </a>
+                        <div class="w-px h-6 bg-gray-300 dark:bg-gray-600"></div>
+                        <div class="flex items-center space-x-2">
+                            <div
+                                class="w-8 h-8 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-coins text-white text-sm"></i>
+                            </div>
+                            <h1 class="text-xl font-bold text-gray-900 dark:text-white">Token Usage Dashboard</h1>
+                        </div>
+                        <div :class="dashboardData.toon_config?.enabled ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'"
+                            class="px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1">
+                            <i
+                                :class="dashboardData.toon_config?.enabled ? 'fas fa-check-circle toon-enabled' : 'fas fa-times-circle'"></i>
+                            <span x-text="dashboardData.toon_config?.enabled ? 'TOON Enabled' : 'TOON Disabled'"></span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-4">
+                        <button @click="toggleTheme()"
+                            class="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-700">
+                            <i :class="darkMode ? 'fas fa-sun text-yellow-500' : 'fas fa-moon text-gray-600'"
+                                class="text-lg"></i>
+                        </button>
+                        <button @click="refreshData()"
+                            class="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors">
+                            <i class="fas fa-sync-alt" :class="{'animate-spin': loading}"></i>
+                        </button>
+                        <div class="text-sm text-gray-500 dark:text-gray-400">
+                            Last updated: <span x-text="lastUpdated"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- TOON Overview Banner -->
+            <div
+                class="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-gray-800 dark:to-gray-750 rounded-xl shadow-sm border border-green-200 dark:border-gray-600 p-6 mb-8 transition-colors duration-300">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div
+                            class="w-16 h-16 bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <i class="fas fa-leaf text-white text-2xl"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+                                TOON <span class="gradient-text">Token Optimization</span>
+                            </h2>
+                            <p class="text-gray-600 dark:text-gray-300 mt-1">
+                                Token Oriented Object Notation - Reduces AI prompt tokens by up to 57%
+                            </p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-4xl font-bold text-green-600 dark:text-green-400"
+                            x-text="formatNumber(dashboardData.stats?.total_tokens_saved || 0)"></div>
+                        <div class="text-sm text-gray-500 dark:text-gray-400">Tokens Saved</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <!-- Total API Calls -->
+                <div
+                    class="stat-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Total AI Calls</p>
+                            <p class="text-3xl font-bold text-gray-900 dark:text-white"
+                                x-text="dashboardData.stats?.total_calls || 0"></p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                <span class="text-green-600" x-text="dashboardData.stats?.successful_calls || 0"></span>
+                                successful
+                            </p>
+                        </div>
+                        <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-robot text-blue-600 dark:text-blue-300 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Total Tokens Used -->
+                <div
+                    class="stat-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Total Tokens</p>
+                            <p class="text-3xl font-bold text-gray-900 dark:text-white"
+                                x-text="formatNumber(dashboardData.stats?.total_tokens || 0)"></p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                <span x-text="formatNumber(dashboardData.stats?.total_prompt_tokens || 0)"></span>
+                                prompt /
+                                <span x-text="formatNumber(dashboardData.stats?.total_completion_tokens || 0)"></span>
+                                completion
+                            </p>
+                        </div>
+                        <div
+                            class="w-12 h-12 bg-purple-100 dark:bg-purple-900 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-coins text-purple-600 dark:text-purple-300 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tokens Saved (TOON) -->
+                <div
+                    class="stat-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-green-200 dark:border-green-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-green-600 dark:text-green-400">Tokens Saved</p>
+                            <p class="text-3xl font-bold text-green-600 dark:text-green-400"
+                                x-text="formatNumber(dashboardData.stats?.total_tokens_saved || 0)"></p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                ~<span
+                                    x-text="(dashboardData.stats?.average_reduction_percentage || 57.1).toFixed(1)"></span>%
+                                reduction
+                            </p>
+                        </div>
+                        <div
+                            class="w-12 h-12 bg-green-100 dark:bg-green-900 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-leaf text-green-600 dark:text-green-300 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estimated Savings -->
+                <div
+                    class="stat-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Est. Savings</p>
+                            <p class="text-3xl font-bold text-gray-900 dark:text-white">$<span
+                                    x-text="(dashboardData.stats?.estimated_savings_usd || 0).toFixed(4)"></span></p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                Total cost: $<span
+                                    x-text="(dashboardData.stats?.estimated_cost_usd || 0).toFixed(4)"></span>
+                            </p>
+                        </div>
+                        <div
+                            class="w-12 h-12 bg-amber-100 dark:bg-amber-900 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-dollar-sign text-amber-600 dark:text-amber-300 text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts and Details Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                <!-- Call Type Breakdown -->
+                <div
+                    class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        <i class="fas fa-chart-pie text-purple-500 mr-2"></i>
+                        Token Usage by Call Type
+                    </h3>
+                    <div class="space-y-4">
+                        <template x-for="(data, callType) in dashboardData.by_call_type || {}" :key="callType">
+                            <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="font-medium text-gray-900 dark:text-white capitalize"
+                                        x-text="callType.replace('_', ' ')"></span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400"
+                                        x-text="data.total_calls + ' calls'"></span>
+                                </div>
+                                <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 mb-2">
+                                    <div class="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all duration-300"
+                                        :style="{ width: Math.min((data.total_tokens / (dashboardData.stats?.total_tokens || 1)) * 100, 100) + '%' }">
+                                    </div>
+                                </div>
+                                <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                                    <span x-text="formatNumber(data.total_tokens) + ' tokens'"></span>
+                                    <span class="text-green-600"
+                                        x-text="formatNumber(data.tokens_saved) + ' saved'"></span>
+                                </div>
+                            </div>
+                        </template>
+                        <div x-show="Object.keys(dashboardData.by_call_type || {}).length === 0"
+                            class="text-center py-8 text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-chart-pie text-4xl mb-2 opacity-50"></i>
+                            <p>No AI calls recorded yet</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TOON Effectiveness -->
+                <div
+                    class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                        <i class="fas fa-bolt text-green-500 mr-2"></i>
+                        TOON Effectiveness
+                    </h3>
+
+                    <!-- TOON Status -->
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="text-gray-600 dark:text-gray-400">TOON Status</span>
+                            <span
+                                :class="dashboardData.toon_config?.enabled ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'"
+                                class="px-3 py-1 rounded-full text-sm font-medium">
+                                <i
+                                    :class="dashboardData.toon_config?.enabled ? 'fas fa-check mr-1' : 'fas fa-times mr-1'"></i>
+                                <span x-text="dashboardData.toon_config?.enabled ? 'Active' : 'Inactive'"></span>
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Stats Comparison -->
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 text-center">
+                            <div class="text-2xl font-bold text-green-600"
+                                x-text="dashboardData.toon_stats?.enabled_calls || 0"></div>
+                            <div class="text-sm text-gray-600 dark:text-gray-400">Calls with TOON</div>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 text-center">
+                            <div class="text-2xl font-bold text-gray-600 dark:text-gray-300"
+                                x-text="dashboardData.toon_stats?.disabled_calls || 0"></div>
+                            <div class="text-sm text-gray-600 dark:text-gray-400">Calls without TOON</div>
+                        </div>
+                    </div>
+
+                    <!-- Reduction Visualization -->
+                    <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Average Token Reduction</span>
+                            <span class="text-lg font-bold text-green-600"
+                                x-text="(dashboardData.toon_stats?.average_reduction || 57.1).toFixed(1) + '%'"></span>
+                        </div>
+                        <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-4">
+                            <div class="bg-gradient-to-r from-green-500 to-emerald-500 h-4 rounded-full transition-all duration-500"
+                                :style="{ width: (dashboardData.toon_stats?.average_reduction || 57.1) + '%' }">
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                            TOON reduces prompt tokens by compressing instructions and using abbreviations
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent AI Calls Table -->
+            <div
+                class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                        <i class="fas fa-history text-blue-500 mr-2"></i>
+                        Recent AI Calls
+                    </h3>
+                    <button @click="clearData()"
+                        class="text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">
+                        <i class="fas fa-trash-alt mr-1"></i>
+                        Clear History
+                    </button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead>
+                            <tr>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    Time</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    Type</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    Tokens</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    Saved</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    TOON</th>
+                                <th
+                                    class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                            <template x-for="record in dashboardData.recent_records || []" :key="record.timestamp">
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300"
+                                        x-text="formatTime(record.timestamp)"></td>
+                                    <td class="px-4 py-3">
+                                        <span class="text-sm font-medium text-gray-900 dark:text-white capitalize"
+                                            x-text="record.call_type.replace('_', ' ')"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300"
+                                        x-text="formatNumber(record.total_tokens)"></td>
+                                    <td class="px-4 py-3">
+                                        <span class="text-sm font-medium text-green-600 dark:text-green-400"
+                                            x-text="record.tokens_saved > 0 ? '+' + formatNumber(record.tokens_saved) : '-'"></span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span
+                                            :class="record.toon_enabled ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'"
+                                            class="px-2 py-1 rounded-full text-xs font-medium">
+                                            <span x-text="record.toon_enabled ? 'Yes' : 'No'"></span>
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <span :class="record.success ? 'text-green-600' : 'text-red-600'">
+                                            <i
+                                                :class="record.success ? 'fas fa-check-circle' : 'fas fa-times-circle'"></i>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div x-show="(dashboardData.recent_records || []).length === 0"
+                        class="text-center py-12 text-gray-500 dark:text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-4 opacity-50"></i>
+                        <p>No AI calls recorded yet</p>
+                        <p class="text-sm mt-2">Token usage will appear here after AI operations</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Box -->
+            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+                <div class="flex items-start space-x-3">
+                    <i class="fas fa-info-circle text-blue-600 text-xl mt-0.5"></i>
+                    <div>
+                        <h4 class="font-semibold text-blue-900 dark:text-blue-200 mb-2">About TOON - Token Oriented
+                            Object Notation</h4>
+                        <ul class="text-sm text-blue-800 dark:text-blue-300 space-y-1.5">
+                            <li><i class="fas fa-check text-green-500 mr-2"></i>Reduces prompt tokens by ~57% through
+                                compact abbreviations</li>
+                            <li><i class="fas fa-check text-green-500 mr-2"></i>Maintains same quality test case
+                                generation</li>
+                            <li><i class="fas fa-check text-green-500 mr-2"></i>Automatically enabled in configuration
+                                (USE_TOON=true)</li>
+                            <li><i class="fas fa-check text-green-500 mr-2"></i>Estimated savings: $0.024 per 1,000
+                                tokens (GPT-4 pricing)</li>
+                            <li><i class="fas fa-check text-green-500 mr-2"></i>Token counts are estimated without
+                                additional API calls</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-8 py-4">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                Token Dashboard - Part of STAX (Story & Test Automation eXtractor)
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        function tokenDashboard() {
+            return {
+                darkMode: localStorage.getItem('darkMode') === 'true',
+                loading: false,
+                lastUpdated: 'Never',
+                dashboardData: {
+                    stats: {},
+                    recent_records: [],
+                    by_call_type: {},
+                    toon_stats: {},
+                    toon_config: { enabled: true }
+                },
+
+                init() {
+                    this.refreshData();
+                    // Auto-refresh every 30 seconds
+                    setInterval(() => this.refreshData(), 30000);
+                },
+
+                async refreshData() {
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/api/token-dashboard');
+                        const result = await response.json();
+
+                        if (result.success) {
+                            this.dashboardData = result.data;
+                            this.lastUpdated = new Date().toLocaleTimeString();
+                        }
+                    } catch (error) {
+                        console.error('Failed to fetch token dashboard data:', error);
+                    }
+                    this.loading = false;
+                },
+
+                async clearData() {
+                    if (!confirm('Are you sure you want to clear all token usage history?')) {
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/token-dashboard/clear', {
+                            method: 'POST'
+                        });
+                        const result = await response.json();
+
+                        if (result.success) {
+                            await this.refreshData();
+                        }
+                    } catch (error) {
+                        console.error('Failed to clear token data:', error);
+                    }
+                },
+
+                toggleTheme() {
+                    this.darkMode = !this.darkMode;
+                    localStorage.setItem('darkMode', this.darkMode.toString());
+                },
+
+                formatNumber(num) {
+                    if (num >= 1000000) {
+                        return (num / 1000000).toFixed(1) + 'M';
+                    } else if (num >= 1000) {
+                        return (num / 1000).toFixed(1) + 'K';
+                    }
+                    return num.toString();
+                },
+
+                formatTime(timestamp) {
+                    try {
+                        const date = new Date(timestamp);
+                        return date.toLocaleString();
+                    } catch {
+                        return timestamp;
+                    }
+                }
+            };
+        }
+    </script>
+</body>
+
+</html>

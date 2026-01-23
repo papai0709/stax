@@ -1,6 +1,7 @@
 """
 AI Client Factory for OpenAI and Azure OpenAI Service
 Provides unified interface for both AI services with automatic provider switching
+Includes token usage tracking for the Token Dashboard
 """
 
 from openai import OpenAI, AzureOpenAI
@@ -9,6 +10,20 @@ import time
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Token tracking is initialized lazily to avoid circular imports
+_token_tracker = None
+
+def _get_tracker():
+    """Lazy initialization of token tracker"""
+    global _token_tracker
+    if _token_tracker is None:
+        try:
+            from src.token_tracker import get_token_tracker
+            _token_tracker = get_token_tracker()
+        except Exception as e:
+            logger.warning(f"Token tracker not available: {e}")
+    return _token_tracker
 
 class AIClientFactory:
     """Factory class for creating AI clients with provider abstraction"""
@@ -35,10 +50,44 @@ class BaseAIClient:
     def __init__(self):
         self.max_retries = Settings.OPENAI_MAX_RETRIES
         self.retry_delay = Settings.OPENAI_RETRY_DELAY
+        self.provider_name = "UNKNOWN"
+        self.model_name = "unknown"
     
     def chat_completion(self, messages, temperature=0.7, max_tokens=2000):
         """Abstract method for chat completion"""
         raise NotImplementedError
+    
+    def track_usage(self, messages, response_text, call_type="general", 
+                    toon_enabled=True, success=True, error_message="",
+                    story_id="", story_title=""):
+        """
+        Track token usage for an AI call.
+        This is called after each successful chat_completion.
+        """
+        tracker = _get_tracker()
+        if tracker is None:
+            return
+        
+        try:
+            # Build prompt text from messages
+            prompt_text = ""
+            for msg in messages:
+                prompt_text += f"{msg.get('role', '')}: {msg.get('content', '')}\n"
+            
+            tracker.record_usage(
+                call_type=call_type,
+                prompt_text=prompt_text,
+                response_text=response_text,
+                toon_enabled=toon_enabled,
+                model=self.model_name,
+                provider=self.provider_name,
+                success=success,
+                error_message=error_message,
+                story_id=story_id,
+                story_title=story_title
+            )
+        except Exception as e:
+            logger.warning(f"Failed to track token usage: {e}")
     
     def _retry_request(self, func, *args, **kwargs):
         """Helper method for retrying requests with exponential backoff"""
@@ -65,6 +114,8 @@ class OpenAIClient(BaseAIClient):
         super().__init__()
         self.client = OpenAI(api_key=Settings.OPENAI_API_KEY)
         self.model = Settings.OPENAI_MODEL
+        self.provider_name = "OPENAI"
+        self.model_name = self.model
         logger.info(f"Initialized OpenAI client with model: {self.model}")
     
     def chat_completion(self, messages, temperature=0.7, max_tokens=2000):
@@ -97,6 +148,8 @@ class AzureOpenAIClient(BaseAIClient):
         )
         self.deployment_name = Settings.AZURE_OPENAI_DEPLOYMENT_NAME
         self.model = Settings.AZURE_OPENAI_MODEL
+        self.provider_name = "AZURE_OPENAI"
+        self.model_name = self.model
         logger.info(f"Initialized Azure OpenAI client with deployment: {self.deployment_name}")
     
     def chat_completion(self, messages, temperature=0.7, max_tokens=2000):
@@ -133,6 +186,8 @@ class GitHubModelsClient(BaseAIClient):
             api_key=Settings.GITHUB_TOKEN
         )
         self.model = Settings.GITHUB_MODEL
+        self.provider_name = "GITHUB"
+        self.model_name = self.model
         logger.info(f"Initialized GitHub Models client with model: {self.model}")
         logger.info(f"Using endpoint: {Settings.GITHUB_API_BASE}")
     
