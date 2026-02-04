@@ -53,6 +53,9 @@ class TokenUsageStats:
     calls_without_toon: int = 0
     story_extractions: int = 0
     test_case_extractions: int = 0
+    # Estimated tokens if TOON was NOT used (for comparison)
+    estimated_tokens_without_toon: int = 0
+    estimated_cost_without_toon_usd: float = 0.0
 
 
 class TokenTracker:
@@ -230,6 +233,10 @@ class TokenTracker:
         self.stats.total_tokens += record.total_tokens
         self.stats.total_tokens_saved += record.tokens_saved
         
+        # Track estimated tokens WITHOUT TOON for comparison
+        # This shows what we would have used if TOON was not enabled
+        self.stats.estimated_tokens_without_toon += record.estimated_standard_tokens + record.completion_tokens
+        
         if record.toon_enabled:
             self.stats.calls_with_toon += 1
         else:
@@ -266,12 +273,17 @@ class TokenTracker:
             # Default to GPT-4 pricing for unknown models
             cost_tier = self.TOKEN_COSTS['gpt-4']
         
-        # Calculate actual cost
+        # Calculate actual cost (with TOON)
         input_cost = (record.prompt_tokens / 1000) * cost_tier['input']
         output_cost = (record.completion_tokens / 1000) * cost_tier['output']
         actual_cost = input_cost + output_cost
         
         self.stats.estimated_cost_usd += actual_cost
+        
+        # Calculate what cost would have been WITHOUT TOON
+        input_cost_without_toon = (record.estimated_standard_tokens / 1000) * cost_tier['input']
+        cost_without_toon = input_cost_without_toon + output_cost
+        self.stats.estimated_cost_without_toon_usd += cost_without_toon
         
         # Calculate savings (if TOON was used)
         if record.toon_enabled and record.tokens_saved > 0:

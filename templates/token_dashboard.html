@@ -233,6 +233,53 @@
                 </div>
             </div>
 
+            <!-- TOON vs Without TOON Comparison -->
+            <div class="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-gray-800 dark:to-gray-750 rounded-xl shadow-sm border border-purple-200 dark:border-gray-600 p-6 mb-8">
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <i class="fas fa-balance-scale text-purple-500 mr-2"></i>
+                    Token Usage Comparison: With TOON vs Without TOON
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Actual Usage (with TOON) -->
+                    <div class="bg-white dark:bg-gray-700 rounded-lg p-4 border-2 border-green-400">
+                        <div class="flex items-center space-x-2 mb-2">
+                            <i class="fas fa-check-circle text-green-500"></i>
+                            <span class="font-semibold text-green-700 dark:text-green-300">With TOON (Actual)</span>
+                        </div>
+                        <p class="text-3xl font-bold text-gray-900 dark:text-white" x-text="formatNumber(dashboardData.stats?.total_tokens || 0)"></p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">tokens used</p>
+                        <p class="text-lg font-semibold text-green-600 mt-2">$<span x-text="(dashboardData.stats?.estimated_cost_usd || 0).toFixed(4)"></span></p>
+                    </div>
+                    
+                    <!-- Estimated Usage (without TOON) -->
+                    <div class="bg-white dark:bg-gray-700 rounded-lg p-4 border-2 border-red-300">
+                        <div class="flex items-center space-x-2 mb-2">
+                            <i class="fas fa-times-circle text-red-500"></i>
+                            <span class="font-semibold text-red-700 dark:text-red-300">Without TOON (Est.)</span>
+                        </div>
+                        <p class="text-3xl font-bold text-gray-900 dark:text-white" x-text="formatNumber(dashboardData.stats?.estimated_tokens_without_toon || 0)"></p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">tokens (estimated)</p>
+                        <p class="text-lg font-semibold text-red-600 mt-2">$<span x-text="(dashboardData.stats?.estimated_cost_without_toon_usd || 0).toFixed(4)"></span></p>
+                    </div>
+                    
+                    <!-- Savings -->
+                    <div class="bg-gradient-to-br from-green-100 to-emerald-100 dark:from-green-900 dark:to-emerald-900 rounded-lg p-4 border-2 border-green-500">
+                        <div class="flex items-center space-x-2 mb-2">
+                            <i class="fas fa-piggy-bank text-green-600"></i>
+                            <span class="font-semibold text-green-800 dark:text-green-200">You Saved!</span>
+                        </div>
+                        <p class="text-3xl font-bold text-green-600 dark:text-green-400" x-text="formatNumber(dashboardData.stats?.total_tokens_saved || 0)"></p>
+                        <p class="text-sm text-gray-600 dark:text-gray-300">tokens saved</p>
+                        <p class="text-lg font-semibold text-green-700 dark:text-green-300 mt-2">
+                            $<span x-text="(dashboardData.stats?.estimated_savings_usd || 0).toFixed(4)"></span> saved
+                        </p>
+                        <p class="text-xs text-green-600 dark:text-green-400 mt-1">
+                            <span x-text="((dashboardData.stats?.total_tokens_saved || 0) / (dashboardData.stats?.estimated_tokens_without_toon || 1) * 100).toFixed(1)"></span>% reduction
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Charts and Details Grid -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
                 <!-- Call Type Breakdown -->

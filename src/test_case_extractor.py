@@ -18,13 +18,13 @@ class TestCaseExtractor:
         self.settings = Settings()
         self.ai_client = get_ai_client()
         self.logger = logging.getLogger(__name__)
-        # Use setting from config if not explicitly provided
-        self.use_toon = use_toon if use_toon is not None else getattr(Settings, 'USE_TOON', True)
+        # TOON is ALWAYS enabled - no API calls without token optimization
+        self.use_toon = True  # Forced to True - TOON is mandatory for all API calls
         
         # Log which AI service is being used
         ai_provider = getattr(Settings, 'AI_SERVICE_PROVIDER', 'OPENAI')
         self.logger.info(f"🤖 TestCaseExtractor: Initialized with AI provider '{ai_provider}'")
-        self.logger.info(f"📊 TOON Mode: {'Enabled' if self.use_toon else 'Disabled'} (Token Optimization)")
+        self.logger.info(f"📊 TOON Mode: ALWAYS ENABLED (Token Optimization Mandatory)")
         if ai_provider == 'AZURE_OPENAI':
             deployment = getattr(Settings, 'AZURE_OPENAI_DEPLOYMENT_NAME', 'Unknown')
             self.logger.info(f"🔷 TestCaseExtractor: Using Azure OpenAI deployment '{deployment}'")
@@ -37,19 +37,62 @@ class TestCaseExtractor:
 
         try:
             self.logger.info(f"Starting test case extraction for story: {user_story.heading}")
+            
+            # ═══════════════════════════════════════════════════════════════════════════
+            # LOG INPUT DATA - Title, Description & Acceptance Criteria
+            # ═══════════════════════════════════════════════════════════════════════════
+            self.logger.info("=" * 80)
+            self.logger.info("📋 INPUT DATA FOR TEST CASE EXTRACTION")
+            self.logger.info("=" * 80)
+            self.logger.info(f"📌 STORY ID: {parent_story_id or 'N/A'}")
+            self.logger.info(f"📌 TITLE: {user_story.heading}")
+            self.logger.info("-" * 80)
+            self.logger.info(f"📝 DESCRIPTION:")
+            # Log description with proper formatting (handle multi-line)
+            desc_lines = (user_story.description or "No description provided").split('\n')
+            for line in desc_lines:
+                self.logger.info(f"   {line}")
+            self.logger.info("-" * 80)
+            self.logger.info(f"✅ ACCEPTANCE CRITERIA ({len(user_story.acceptance_criteria)} items):")
+            if user_story.acceptance_criteria:
+                for i, ac in enumerate(user_story.acceptance_criteria, 1):
+                    self.logger.info(f"   {i}. {ac}")
+            else:
+                self.logger.info("   ⚠️  No acceptance criteria provided")
+            self.logger.info("=" * 80)
 
             # Prepare the prompt for AI service
             prompt = self._build_extraction_prompt(user_story)
+            
+            # ═══════════════════════════════════════════════════════════════════════════
+            # LOG THE COMPLETE REQUEST PROMPT
+            # ═══════════════════════════════════════════════════════════════════════════
+            self.logger.info("")
+            self.logger.info("🤖 AI REQUEST PROMPT (USER MESSAGE)")
+            self.logger.info("=" * 80)
+            prompt_lines = prompt.split('\n')
+            for line in prompt_lines:
+                self.logger.info(f"   {line}")
+            self.logger.info("=" * 80)
 
             # Call AI service with better error handling
             try:
                 # Use TOON system prompt if enabled for token optimization
                 system_prompt = self._get_system_prompt_toon() if self.use_toon else self._get_system_prompt()
                 
+                # Log system prompt summary
+                self.logger.info("")
+                self.logger.info(f"🔧 SYSTEM PROMPT: {'TOON-Optimized' if self.use_toon else 'Standard'} mode")
+                self.logger.info(f"   System prompt length: {len(system_prompt)} characters")
+                self.logger.info(f"   User prompt length: {len(prompt)} characters")
+                self.logger.info("-" * 80)
+                
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ]
+                
+                self.logger.info(f"🚀 Sending request to AI service...")
                 
                 response_content = self.ai_client.chat_completion(
                     messages=messages,
@@ -60,6 +103,8 @@ class TestCaseExtractor:
                 # Validate that we got a response
                 if not response_content or not response_content.strip():
                     raise ValueError("Empty response from AI service")
+                
+                self.logger.info(f"✅ Received response from AI ({len(response_content)} characters)")
                 
                 # Track token usage for the dashboard
                 self.ai_client.track_usage(
@@ -290,6 +335,14 @@ Ensure test cases are practical, executable, and provide good coverage of the fu
 
     def _build_extraction_prompt(self, user_story: UserStory) -> str:
         """Build the extraction prompt from user story details (TOON-optimized if enabled)"""
+        
+        # Log which fields are being included in the prompt
+        self.logger.debug("=" * 60)
+        self.logger.debug("📦 BUILDING EXTRACTION PROMPT - FIELDS INCLUDED:")
+        self.logger.debug(f"   ✅ Title: '{user_story.heading}' ({len(user_story.heading)} chars)")
+        self.logger.debug(f"   ✅ Description: {len(user_story.description or '')} chars")
+        self.logger.debug(f"   ✅ Acceptance Criteria: {len(user_story.acceptance_criteria)} items")
+        self.logger.debug("=" * 60)
 
         if self.use_toon:
             return self._build_toon_prompt(user_story)
