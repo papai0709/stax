@@ -975,6 +975,113 @@ class MonitorAPI:
                     'error': f'Failed to upload test cases: {str(e)}'
                 }), 500
 
+        @self.app.route('/api/hierarchy/status', methods=['GET'])
+        def get_hierarchy_status():
+            """Return Epic → Feature → Story hierarchy status for the dashboard."""
+            try:
+                epics_data = []
+                total_features = 0
+                total_stories = 0
+
+                if self.monitor:
+                    for epic_id in list(self.monitor.monitored_epics.keys()):
+                        try:
+                            epic_info = self.agent.ado_client.get_work_item(int(epic_id))
+                            epic_title = epic_info.get('fields', {}).get('System.Title', f'Epic {epic_id}') if epic_info else f'Epic {epic_id}'
+
+                            # Fetch direct children (Features or Stories under the Epic)
+                            children = self.agent.ado_client.get_child_work_items(int(epic_id)) or []
+
+                            features = []
+                            for child in children:
+                                child_id = child.get('id')
+                                child_type = child.get('fields', {}).get('System.WorkItemType', '')
+                                child_title = child.get('fields', {}).get('System.Title', f'Item {child_id}')
+
+                                if child_type == 'Feature':
+                                    # Fetch stories under this feature
+                                    stories = self.agent.ado_client.get_child_work_items(int(child_id)) or []
+                                    story_list = [
+                                        {
+                                            'id': str(s.get('id')),
+                                            'title': s.get('fields', {}).get('System.Title', f'Story {s.get("id")}'),
+                                            'state': s.get('fields', {}).get('System.State', 'Unknown'),
+                                        }
+                                        for s in stories
+                                    ]
+                                    features.append({
+                                        'id': str(child_id),
+                                        'title': child_title,
+                                        'story_count': len(story_list),
+                                        'stories': story_list,
+                                    })
+                                    total_stories += len(story_list)
+                                else:
+                                    # Treat non-Feature children as stories directly under the Epic
+                                    features.append({
+                                        'id': str(child_id),
+                                        'title': child_title,
+                                        'story_count': 0,
+                                        'stories': [],
+                                    })
+
+                            total_features += len(features)
+                            epics_data.append({
+                                'id': str(epic_id),
+                                'title': epic_title,
+                                'feature_count': len(features),
+                                'features': features,
+                            })
+                        except Exception as inner_e:
+                            self.logger.error(f"Error building hierarchy for epic {epic_id}: {inner_e}")
+                            epics_data.append({
+                                'id': str(epic_id),
+                                'title': f'Epic {epic_id}',
+                                'feature_count': 0,
+                                'features': [],
+                            })
+
+                return jsonify({
+                    'success': True,
+                    'status': {
+                        'total_epics': len(epics_data),
+                        'total_features': total_features,
+                        'total_stories': total_stories,
+                        'epics': epics_data,
+                    }
+                })
+            except Exception as e:
+                self.logger.error(f"Error getting hierarchy status: {str(e)}")
+                return jsonify({'success': False, 'error': str(e)}), 500
+
+        @self.app.route('/api/epics/<epic_id>/sync-hierarchy', methods=['POST'])
+        def sync_epic_hierarchy(epic_id):
+            """Trigger Epic → Feature → Story hierarchy sync for a single epic."""
+            try:
+                result = self.agent.process_requirement_by_id(epic_id, upload_to_ado=True)
+                features_found = 0
+                total_stories_found = 0
+
+                if result and result.extraction_successful:
+                    total_stories_found = len(result.stories) if result.stories else 0
+
+                return jsonify({
+                    'success': result.extraction_successful if result else False,
+                    'epic_id': epic_id,
+                    'result': {
+                        'features_found': features_found,
+                        'total_stories_found': total_stories_found,
+                        'error_message': result.error_message if result and not result.extraction_successful else None,
+                    }
+                })
+            except Exception as e:
+                self.logger.error(f"Error syncing hierarchy for epic {epic_id}: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'epic_id': epic_id,
+                    'result': {'features_found': 0, 'total_stories_found': 0, 'error_message': str(e)}
+                }), 500
+
     def run(self, host='0.0.0.0', debug=False):
         """Run the Flask application"""
         self.logger.info(f"Starting Monitor API server on {host}:{self.port}")
