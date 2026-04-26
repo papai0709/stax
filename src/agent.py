@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import List, Optional, Dict, Any
 
 from src.ado_client import ADOClient
@@ -693,8 +694,10 @@ class StoryExtractionAgent:
         logger.setLevel(logging.DEBUG)
         
         if not logger.handlers:
-            # Add file handler
-            file_handler = logging.FileHandler('logs/story_extraction.log')
+            # Add file handler — use /tmp/logs so it works on read-only serverless fs
+            _log_dir = os.environ.get('LOG_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs'))
+            os.makedirs(_log_dir, exist_ok=True)
+            file_handler = logging.FileHandler(os.path.join(_log_dir, 'story_extraction.log'))
             file_formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )

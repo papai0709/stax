@@ -125,9 +125,10 @@ class EpicChangeMonitor:
             )
             console_handler.setFormatter(console_formatter)
             logger.addHandler(console_handler)
-            # File handler
-            log_file = Path("logs") / "epic_monitor.log"
-            log_file.parent.mkdir(exist_ok=True)
+            # File handler — use /tmp/logs so it works on read-only serverless fs
+            _log_dir = Path(os.environ.get('LOG_DIR', Path(__file__).parent.parent / 'logs'))
+            _log_dir.mkdir(parents=True, exist_ok=True)
+            log_file = _log_dir / 'epic_monitor.log'
             file_handler = logging.FileHandler(log_file)
             file_handler.setFormatter(console_formatter)
             logger.addHandler(file_handler)
@@ -1334,7 +1335,6 @@ if __name__ == "__main__":
         format=log_format,
         handlers=[
             logging.StreamHandler(sys.stdout),  # Log to stdout
-            logging.FileHandler('logs/enhanced_epic_monitor.log')  # Also log to file
         ]
     )
     logger = logging.getLogger(__name__)
