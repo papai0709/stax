@@ -125,8 +125,8 @@ class EpicChangeMonitor:
             )
             console_handler.setFormatter(console_formatter)
             logger.addHandler(console_handler)
-            # File handler — use /tmp/logs so it works on read-only serverless fs
-            _log_dir = Path(os.environ.get('LOG_DIR', Path(__file__).parent.parent / 'logs'))
+            # File handler — /tmp/logs is always writable on serverless (Vercel/Lambda).
+            _log_dir = Path(os.environ.get('LOG_DIR', '/tmp/logs'))
             _log_dir.mkdir(parents=True, exist_ok=True)
             log_file = _log_dir / 'epic_monitor.log'
             file_handler = logging.FileHandler(log_file)

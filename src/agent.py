@@ -694,8 +694,11 @@ class StoryExtractionAgent:
         logger.setLevel(logging.DEBUG)
         
         if not logger.handlers:
-            # Add file handler — use /tmp/logs so it works on read-only serverless fs
-            _log_dir = os.environ.get('LOG_DIR', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs'))
+            # Add file handler — /tmp/logs is always writable on serverless (Vercel/Lambda).
+            # Override with LOG_DIR env var or fall back to project logs/ when running locally.
+            _default_log_dir = '/tmp/logs'
+            _project_log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
+            _log_dir = os.environ.get('LOG_DIR', _default_log_dir if not os.access(os.path.dirname(_project_log_dir), os.W_OK) else _project_log_dir)
             os.makedirs(_log_dir, exist_ok=True)
             file_handler = logging.FileHandler(os.path.join(_log_dir, 'story_extraction.log'))
             file_formatter = logging.Formatter(

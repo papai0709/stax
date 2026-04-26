@@ -95,8 +95,8 @@ class TokenTracker:
         self.logger = logging.getLogger(__name__)
         self.records: deque = deque(maxlen=1000)  # Keep last 1000 records
         self.stats = TokenUsageStats()
-        self.data_file = Path("logs/token_usage.json")
-        self.data_file.parent.mkdir(exist_ok=True)
+        self.data_file = Path(os.environ.get('LOG_DIR', '/tmp/logs')) / 'token_usage.json'
+        self.data_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Load existing data if available
         self._load_data()
