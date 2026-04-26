@@ -387,7 +387,14 @@ class MonitorAPI:
                     'epic_ids': list(self.monitor.monitored_epics.keys()) if self.monitor.monitored_epics else [],
                     'auto_sync': self.monitor.config.auto_sync if hasattr(self.monitor.config, 'auto_sync') else True,
                     'auto_extract_new_epics': self.monitor.config.auto_extract_new_epics if hasattr(self.monitor.config, 'auto_extract_new_epics') else True,
-                    
+                    # AI provider — read live from os.environ so Vercel env var changes are reflected
+                    # without waiting for Settings class re-evaluation.
+                    'ai_service_provider': os.environ.get('AI_SERVICE_PROVIDER', getattr(Settings, 'AI_SERVICE_PROVIDER', 'OPENAI')),
+                    'azure_openai_endpoint': os.environ.get('AZURE_OPENAI_ENDPOINT', getattr(Settings, 'AZURE_OPENAI_ENDPOINT', '') or ''),
+                    'azure_openai_deployment_name': os.environ.get('AZURE_OPENAI_DEPLOYMENT_NAME', getattr(Settings, 'AZURE_OPENAI_DEPLOYMENT_NAME', '') or ''),
+                    'azure_openai_api_version': os.environ.get('AZURE_OPENAI_API_VERSION', getattr(Settings, 'AZURE_OPENAI_API_VERSION', '2024-02-15-preview')),
+                    'github_model': os.environ.get('GITHUB_MODEL', getattr(Settings, 'GITHUB_MODEL', 'gpt-4o-mini')),
+                    'platform_type': os.environ.get('PLATFORM_TYPE', getattr(Settings, 'PLATFORM_TYPE', 'ADO')),
                     # Add file path information
                     'env_file_path': self.env_manager.get_env_file_path(),
                     'env_file_directory': self.env_manager.get_env_file_directory(),
