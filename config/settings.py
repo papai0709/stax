@@ -151,27 +151,33 @@ class Settings:
         
         if cls.AI_SERVICE_PROVIDER == 'AZURE_OPENAI':
             print("[CONFIG]  Validating Azure OpenAI configuration...")
-            # Validate Azure OpenAI settings
             if not cls.AZURE_OPENAI_ENDPOINT:
                 missing.append("AZURE_OPENAI_ENDPOINT")
                 print("[CONFIG]  AZURE_OPENAI_ENDPOINT is not set")
             else:
                 print(f"[CONFIG]  AZURE_OPENAI_ENDPOINT: {cls.AZURE_OPENAI_ENDPOINT}")
-                
+
             if not cls.AZURE_OPENAI_API_KEY:
                 missing.append("AZURE_OPENAI_API_KEY")
                 print("[CONFIG]  AZURE_OPENAI_API_KEY is not set")
             else:
                 print(f"[CONFIG]  AZURE_OPENAI_API_KEY: {'*' * (len(cls.AZURE_OPENAI_API_KEY) - 4) + cls.AZURE_OPENAI_API_KEY[-4:]}")
-                
+
             if not cls.AZURE_OPENAI_DEPLOYMENT_NAME:
                 missing.append("AZURE_OPENAI_DEPLOYMENT_NAME")
                 print("[CONFIG]  AZURE_OPENAI_DEPLOYMENT_NAME is not set")
             else:
                 print(f"[CONFIG]  AZURE_OPENAI_DEPLOYMENT_NAME: {cls.AZURE_OPENAI_DEPLOYMENT_NAME}")
+        elif cls.AI_SERVICE_PROVIDER == 'GITHUB':
+            print("[CONFIG]  Validating GitHub Models configuration...")
+            if not cls.GITHUB_TOKEN:
+                missing.append("GITHUB_TOKEN")
+                print("[CONFIG]  GITHUB_TOKEN is not set")
+            else:
+                print(f"[CONFIG]  GITHUB_TOKEN: {'*' * (len(cls.GITHUB_TOKEN) - 4) + cls.GITHUB_TOKEN[-4:]}")
+            print(f"[CONFIG]  GITHUB_MODEL: {cls.GITHUB_MODEL}")
         else:
             print("[CONFIG]  Validating OpenAI configuration...")
-            # Validate OpenAI settings
             if not cls.OPENAI_API_KEY:
                 missing.append("OPENAI_API_KEY")
                 print("[CONFIG]  OPENAI_API_KEY is not set")
