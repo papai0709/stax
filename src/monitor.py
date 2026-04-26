@@ -28,7 +28,7 @@ class MonitorConfig:
     OPENAI_RETRY_DELAY: ClassVar[int] = int(os.getenv('OPENAI_RETRY_DELAY', 5))
     poll_interval_seconds: int = 300  # 5 minutes default
     max_concurrent_syncs: int = 3
-    snapshot_directory: str = "snapshots"
+    snapshot_directory: str = os.environ.get('SNAPSHOT_DIR', '/tmp/snapshots')
     log_level: str = "INFO"
     epic_ids: List[str] = None
     excluded_epic_ids: List[str] = None  # List of Epic IDs to exclude from automatic monitoring

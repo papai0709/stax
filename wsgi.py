@@ -1,5 +1,14 @@
 import os
 import logging
+
+# Vercel / AWS Lambda sandbox: home dir is read-only.
+# Point all SDK credential/cache writes to /tmp, which is always writable.
+os.environ.setdefault('HOME', '/tmp')
+os.environ.setdefault('XDG_CACHE_HOME', '/tmp/.cache')
+os.environ.setdefault('XDG_CONFIG_HOME', '/tmp/.config')
+os.environ.setdefault('AZURE_CONFIG_DIR', '/tmp/.azure')
+os.environ.setdefault('ADAL_TOKEN_CACHE', '/tmp/.adal/cache.json')
+
 from flask import Flask, jsonify
 
 logging.basicConfig(level=logging.INFO)
