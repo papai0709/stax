@@ -21,14 +21,15 @@ def _build_app():
         logger.info("MonitorAPI Flask app created successfully.")
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to initialise MonitorAPI: %s", exc, exc_info=True)
-        # Fall back to a minimal error app so the platform gets an HTTP 500
-        # instead of a process crash / FUNCTION_INVOCATION_FAILED.
+        # Capture exc explicitly — Python 3 deletes the 'as' variable after the
+        # except block, so closures defined here cannot reference it directly.
+        _init_error = str(exc)
         _flask_app = Flask(__name__)
 
         @_flask_app.route("/", defaults={"path": ""})
         @_flask_app.route("/<path:path>")
         def _error(path):
-            return jsonify({"error": "Application failed to initialise", "detail": str(exc)}), 500
+            return jsonify({"error": "Application failed to initialise", "detail": _init_error}), 500
 
     return _flask_app
 

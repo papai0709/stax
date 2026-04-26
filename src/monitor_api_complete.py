@@ -24,7 +24,10 @@ class MonitorAPI:
     """Flask-based API for monitoring and controlling the story extraction process"""
 
     def __init__(self, config: MonitorConfig = None, port: int = 5001):
-        self.app = Flask(__name__, template_folder='../templates', static_folder='../static')
+        _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.app = Flask(__name__,
+                         template_folder=os.path.join(_base, 'templates'),
+                         static_folder=os.path.join(_base, 'static'))
         CORS(self.app)
         self.port = port
 
@@ -33,7 +36,7 @@ class MonitorAPI:
         self.logger = logging.getLogger(__name__)
         
         # Initialize environment file manager
-        self.env_manager = EnvFileManager('config/.env')
+        self.env_manager = EnvFileManager(os.path.join(_base, 'config', '.env'))
 
         # Create monitor instance, loading config from file if none provided
         self.monitor = None
