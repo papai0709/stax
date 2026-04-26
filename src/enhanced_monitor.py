@@ -72,11 +72,11 @@ class EnhancedEpicChangeMonitor:
         self.is_running = False
         self.monitored_epics: Dict[str, EnhancedEpicState] = {}
         self.executor = ThreadPoolExecutor(max_workers=config.max_concurrent_syncs)
-        self.snapshot_dir = Path(config.snapshot_directory)
-        self.snapshot_dir.mkdir(exist_ok=True)
+        self.snapshot_dir = Path(config.snapshot_directory) if os.path.isabs(config.snapshot_directory) else Path('/tmp') / config.snapshot_directory
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         
         # State file to track which epics have been processed
-        self.state_file = Path("enhanced_monitor_state.json")
+        self.state_file = Path('/tmp/enhanced_monitor_state.json')
         self.processed_epics = self._load_processed_epics()
 
         # Load existing snapshots
