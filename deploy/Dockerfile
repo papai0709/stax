@@ -58,6 +58,9 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # Copy application code with proper ownership
 COPY --chown=appuser:appgroup . .
 
+# Copy sample env file for reference (visible to users)
+COPY --chown=appuser:appgroup .env.example /app/.env.example
+
 # Set up application directories and permissions
 RUN mkdir -p logs snapshots && \
     chown -R appuser:appgroup logs snapshots && \

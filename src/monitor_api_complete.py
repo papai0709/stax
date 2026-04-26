@@ -5,6 +5,7 @@ Provides REST API endpoints for the web dashboard
 
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -39,10 +40,21 @@ class MonitorAPI:
         self.monitor_thread = None
         if config is None:
             try:
-                with open('monitor_config_enhanced.json', 'r') as f:
-                    config_data = json.load(f)
-                    config = MonitorConfig(**config_data)
-                    self.logger.info("Loaded monitor configuration from monitor_config_enhanced.json")
+                _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                _config_candidates = [
+                    os.path.join(_root, 'config', 'monitor_config_enhanced.json'),
+                    os.path.join(_root, 'monitor_config_enhanced.json'),
+                ]
+                config_data = None
+                for _path in _config_candidates:
+                    if os.path.exists(_path):
+                        with open(_path, 'r') as f:
+                            config_data = json.load(f)
+                        self.logger.info(f"Loaded monitor configuration from {_path}")
+                        break
+                if config_data is None:
+                    raise FileNotFoundError("monitor_config_enhanced.json not found in expected locations")
+                config = MonitorConfig(**config_data)
             except Exception as e:
                 self.logger.error(f"Failed to load monitor configuration: {str(e)}")
                 raise RuntimeError("Monitor configuration is required. Please provide a valid configuration.")

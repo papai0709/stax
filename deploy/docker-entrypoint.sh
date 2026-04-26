@@ -4,7 +4,72 @@
 
 set -e
 
-echo "[DOCKER-STARTUP] Starting STAX (Story & Test Automation eXtractor) application..."
+# Print banner
+echo "============================================================"
+echo "  STAX - Story & Test Automation eXtractor"
+echo "  Docker Container Starting..."
+echo "============================================================"
+echo ""
+
+# Function to show usage instructions
+show_usage() {
+    echo ""
+    echo "============================================================"
+    echo "  HOW TO RUN THIS CONTAINER"
+    echo "============================================================"
+    echo ""
+    echo "You must provide environment variables when running this container."
+    echo ""
+    echo "OPTION 1: Using --env-file (Recommended)"
+    echo "-------------------------------------------"
+    echo "Create a .env file with your configuration, then run:"
+    echo ""
+    echo "  docker run -d -p 5001:5001 --env-file .env papai0709/stax:latest"
+    echo ""
+    echo "OPTION 2: Using -e flags"
+    echo "-------------------------------------------"
+    echo ""
+    echo "For Azure DevOps + Azure OpenAI:"
+    echo "  docker run -d -p 5001:5001 \\"
+    echo "    -e PLATFORM_TYPE=ADO \\"
+    echo "    -e ADO_ORGANIZATION=your-org \\"
+    echo "    -e ADO_PROJECT=your-project \\"
+    echo "    -e ADO_PAT=your-pat-token \\"
+    echo "    -e AI_SERVICE_PROVIDER=AZURE_OPENAI \\"
+    echo "    -e AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com \\"
+    echo "    -e AZURE_OPENAI_API_KEY=your-key \\"
+    echo "    -e AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment \\"
+    echo "    papai0709/stax:latest"
+    echo ""
+    echo "For Azure DevOps + OpenAI:"
+    echo "  docker run -d -p 5001:5001 \\"
+    echo "    -e PLATFORM_TYPE=ADO \\"
+    echo "    -e ADO_ORGANIZATION=your-org \\"
+    echo "    -e ADO_PROJECT=your-project \\"
+    echo "    -e ADO_PAT=your-pat-token \\"
+    echo "    -e AI_SERVICE_PROVIDER=OPENAI \\"
+    echo "    -e OPENAI_API_KEY=your-openai-key \\"
+    echo "    papai0709/stax:latest"
+    echo ""
+    echo "For Azure DevOps + GitHub Models (Free):"
+    echo "  docker run -d -p 5001:5001 \\"
+    echo "    -e PLATFORM_TYPE=ADO \\"
+    echo "    -e ADO_ORGANIZATION=your-org \\"
+    echo "    -e ADO_PROJECT=your-project \\"
+    echo "    -e ADO_PAT=your-pat-token \\"
+    echo "    -e AI_SERVICE_PROVIDER=GITHUB \\"
+    echo "    -e GITHUB_TOKEN=your-github-pat \\"
+    echo "    -e GITHUB_MODEL=gpt-4o-mini \\"
+    echo "    papai0709/stax:latest"
+    echo ""
+    echo "For JIRA + any AI provider, use PLATFORM_TYPE=JIRA with:"
+    echo "  -e JIRA_BASE_URL=https://yourcompany.atlassian.net"
+    echo "  -e JIRA_USERNAME=your-email"
+    echo "  -e JIRA_TOKEN=your-api-token"
+    echo ""
+    echo "============================================================"
+    echo ""
+}
 
 # Create necessary directories
 mkdir -p logs snapshots
@@ -14,7 +79,7 @@ chmod 755 logs snapshots
 
 # Check if monitor configuration exists, create default if not
 if [ ! -f "monitor_config.json" ]; then
-    echo "[DOCKER-STARTUP] Creating default monitor configuration..."
+    echo "[STAX] Creating default monitor configuration..."
     cat > monitor_config.json << EOF
 {
     "poll_interval_seconds": 300,
@@ -30,50 +95,100 @@ fi
 
 # Validate critical environment variables
 if [ -z "$PLATFORM_TYPE" ]; then
-    echo "[DOCKER-STARTUP] WARNING: PLATFORM_TYPE not set, defaulting to ADO"
+    echo "[STAX] PLATFORM_TYPE not set, defaulting to ADO"
     export PLATFORM_TYPE="ADO"
 fi
 
+VALIDATION_FAILED=false
+
 if [ "$PLATFORM_TYPE" = "ADO" ]; then
     if [ -z "$ADO_ORGANIZATION" ] || [ -z "$ADO_PROJECT" ] || [ -z "$ADO_PAT" ]; then
-        echo "[DOCKER-STARTUP] ERROR: ADO configuration incomplete. Required: ADO_ORGANIZATION, ADO_PROJECT, ADO_PAT"
-        exit 1
+        echo ""
+        echo "[STAX] ERROR: Azure DevOps configuration incomplete!"
+        echo ""
+        echo "Missing required variables:"
+        [ -z "$ADO_ORGANIZATION" ] && echo "  - ADO_ORGANIZATION (your Azure DevOps organization name)"
+        [ -z "$ADO_PROJECT" ] && echo "  - ADO_PROJECT (your Azure DevOps project name)"
+        [ -z "$ADO_PAT" ] && echo "  - ADO_PAT (your Personal Access Token)"
+        VALIDATION_FAILED=true
+    else
+        echo "[STAX] ✓ Azure DevOps configuration validated"
     fi
-    echo "[DOCKER-STARTUP] ADO configuration validated"
 elif [ "$PLATFORM_TYPE" = "JIRA" ]; then
     if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_USERNAME" ] || [ -z "$JIRA_TOKEN" ]; then
-        echo "[DOCKER-STARTUP] ERROR: JIRA configuration incomplete. Required: JIRA_BASE_URL, JIRA_USERNAME, JIRA_TOKEN"
-        exit 1
+        echo ""
+        echo "[STAX] ERROR: JIRA configuration incomplete!"
+        echo ""
+        echo "Missing required variables:"
+        [ -z "$JIRA_BASE_URL" ] && echo "  - JIRA_BASE_URL (e.g., https://yourcompany.atlassian.net)"
+        [ -z "$JIRA_USERNAME" ] && echo "  - JIRA_USERNAME (your email)"
+        [ -z "$JIRA_TOKEN" ] && echo "  - JIRA_TOKEN (your API token)"
+        VALIDATION_FAILED=true
+    else
+        echo "[STAX] ✓ JIRA configuration validated"
     fi
-    echo "[DOCKER-STARTUP] JIRA configuration validated"
+else
+    echo "[STAX] ERROR: Invalid PLATFORM_TYPE '$PLATFORM_TYPE'. Must be 'ADO' or 'JIRA'"
+    VALIDATION_FAILED=true
 fi
 
 # Validate AI service configuration
-if [ "$AI_SERVICE_PROVIDER" = "OPENAI" ]; then
+if [ -z "$AI_SERVICE_PROVIDER" ]; then
+    echo ""
+    echo "[STAX] ERROR: AI_SERVICE_PROVIDER not set!"
+    echo "  Must be one of: OPENAI, AZURE_OPENAI, GITHUB"
+    VALIDATION_FAILED=true
+elif [ "$AI_SERVICE_PROVIDER" = "OPENAI" ]; then
     if [ -z "$OPENAI_API_KEY" ]; then
-        echo "[DOCKER-STARTUP] ERROR: OpenAI configuration incomplete. Required: OPENAI_API_KEY"
-        exit 1
+        echo ""
+        echo "[STAX] ERROR: OpenAI configuration incomplete!"
+        echo "  Missing: OPENAI_API_KEY"
+        VALIDATION_FAILED=true
+    else
+        echo "[STAX] ✓ OpenAI configuration validated"
     fi
-    echo "[DOCKER-STARTUP] OpenAI configuration validated"
 elif [ "$AI_SERVICE_PROVIDER" = "AZURE_OPENAI" ]; then
     if [ -z "$AZURE_OPENAI_ENDPOINT" ] || [ -z "$AZURE_OPENAI_API_KEY" ] || [ -z "$AZURE_OPENAI_DEPLOYMENT_NAME" ]; then
-        echo "[DOCKER-STARTUP] ERROR: Azure OpenAI configuration incomplete. Required: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT_NAME"
-        exit 1
+        echo ""
+        echo "[STAX] ERROR: Azure OpenAI configuration incomplete!"
+        echo ""
+        echo "Missing required variables:"
+        [ -z "$AZURE_OPENAI_ENDPOINT" ] && echo "  - AZURE_OPENAI_ENDPOINT (your Azure OpenAI endpoint URL)"
+        [ -z "$AZURE_OPENAI_API_KEY" ] && echo "  - AZURE_OPENAI_API_KEY (your Azure OpenAI key)"
+        [ -z "$AZURE_OPENAI_DEPLOYMENT_NAME" ] && echo "  - AZURE_OPENAI_DEPLOYMENT_NAME (your deployment name)"
+        VALIDATION_FAILED=true
+    else
+        echo "[STAX] ✓ Azure OpenAI configuration validated"
     fi
-    echo "[DOCKER-STARTUP] Azure OpenAI configuration validated"
 elif [ "$AI_SERVICE_PROVIDER" = "GITHUB" ]; then
     if [ -z "$GITHUB_TOKEN" ] || [ -z "$GITHUB_MODEL" ]; then
-        echo "[DOCKER-STARTUP] ERROR: GitHub Models configuration incomplete. Required: GITHUB_TOKEN, GITHUB_MODEL"
-        exit 1
+        echo ""
+        echo "[STAX] ERROR: GitHub Models configuration incomplete!"
+        echo ""
+        echo "Missing required variables:"
+        [ -z "$GITHUB_TOKEN" ] && echo "  - GITHUB_TOKEN (your GitHub Personal Access Token)"
+        [ -z "$GITHUB_MODEL" ] && echo "  - GITHUB_MODEL (e.g., gpt-4o-mini, gpt-4o)"
+        VALIDATION_FAILED=true
+    else
+        echo "[STAX] ✓ GitHub Models configuration validated"
     fi
-    echo "[DOCKER-STARTUP] GitHub Models configuration validated"
 else
-    echo "[DOCKER-STARTUP] ERROR: AI_SERVICE_PROVIDER must be either 'OPENAI', 'AZURE_OPENAI', or 'GITHUB'"
+    echo ""
+    echo "[STAX] ERROR: Invalid AI_SERVICE_PROVIDER '$AI_SERVICE_PROVIDER'"
+    echo "  Must be one of: OPENAI, AZURE_OPENAI, GITHUB"
+    VALIDATION_FAILED=true
+fi
+
+# If validation failed, show usage and exit
+if [ "$VALIDATION_FAILED" = true ]; then
+    show_usage
     exit 1
 fi
 
-echo "[DOCKER-STARTUP] Configuration validation complete"
-echo "[DOCKER-STARTUP] Starting Monitor API on port 5001..."
+echo ""
+echo "[STAX] ✓ All configuration validated successfully"
+echo "[STAX] Starting Monitor API on port 5001..."
+echo ""
 
 # Start the application
 exec python -m src.monitor_api
