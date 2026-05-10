@@ -614,6 +614,56 @@ class EpicChangeMonitor:
         #     self.logger.info(f"Auto-detect: Removing Epic {epic_id} (no longer exists in ADO).")
         #     self.monitored_epics.pop(epic_id, None)
 
+    def check_once(self) -> Dict:
+        """
+        Perform a single pass of EPIC change detection and sync without looping.
+        Designed for Vercel Cron Jobs / serverless execution — no threads, no while loop.
+        Returns a summary dict with results for every EPIC checked.
+        """
+        self.logger.info("check_once: starting single-pass monitor run")
+        results = []
+
+        try:
+            self._load_all_existing_epics()
+        except Exception as e:
+            self.logger.error(f"check_once: failed to load epics: {e}")
+            return {"success": False, "error": str(e), "results": []}
+
+        for epic_id in list(self.monitored_epics.keys()):
+            entry = {"epic_id": epic_id, "checked": False, "synced": False, "error": None}
+            try:
+                if not self._check_epic_exists(epic_id):
+                    self.logger.info(f"check_once: EPIC {epic_id} no longer exists, skipping")
+                    entry["error"] = "Epic no longer exists"
+                    results.append(entry)
+                    continue
+
+                entry["checked"] = True
+                epic_state = self.monitored_epics[epic_id]
+
+                if self._check_for_epic_changes(epic_id) and self._should_extract_stories(epic_id):
+                    if self.config.auto_sync:
+                        sync_result = self._sync_epic(epic_id)
+                        entry["synced"] = sync_result.sync_successful if sync_result else False
+                        entry["created_stories"] = getattr(sync_result, "created_stories", [])
+                        entry["updated_stories"] = getattr(sync_result, "updated_stories", [])
+                    else:
+                        entry["synced"] = False
+                        entry["skipped_reason"] = "auto_sync disabled"
+                else:
+                    entry["skipped_reason"] = "no changes detected"
+
+                epic_state.last_check = datetime.now()
+
+            except Exception as e:
+                self.logger.error(f"check_once: error processing EPIC {epic_id}: {e}")
+                entry["error"] = str(e)
+            finally:
+                results.append(entry)
+
+        self.logger.info(f"check_once: completed — {len(results)} EPICs checked")
+        return {"success": True, "epics_checked": len(results), "results": results}
+
     def start(self):
         """Start the monitoring service"""
         if self.is_running:

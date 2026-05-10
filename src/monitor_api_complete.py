@@ -192,6 +192,30 @@ class MonitorAPI:
                     'error': f'Failed to stop monitor: {str(e)}'
                 }), 500
 
+        @self.app.route('/api/monitor/check-once', methods=['POST', 'GET'])
+        def check_once():
+            """
+            Perform a single-pass EPIC check and sync without starting a background thread.
+            Intended for Vercel Cron Jobs (scheduled via vercel.json) or on-demand triggers.
+            Safe to call in a serverless environment — no persistent threads, no while loop.
+            """
+            try:
+                if not self.monitor:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Monitor not configured'
+                    }), 400
+
+                result = self.monitor.check_once()
+                return jsonify(result)
+
+            except Exception as e:
+                self.logger.error(f"Error in check-once: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'check-once failed: {str(e)}'
+                }), 500
+
         @self.app.route('/api/monitor/status', methods=['GET'])
         def get_monitor_status():
             """Get current monitoring status"""

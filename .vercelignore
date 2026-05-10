@@ -1,0 +1,18 @@
+# Exclude from Vercel deployment bundle
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+config/.env
+backups/
+snapshots/
+logs/
+tests/
+docs/
+scripts/
+.pytest_cache/
+Makefile
+run.sh
+start_services.ps1
+stop_services.ps1
