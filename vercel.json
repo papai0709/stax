@@ -23,7 +23,7 @@
   "crons": [
     {
       "path": "/api/monitor/check-once",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
